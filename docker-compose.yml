@@ -3,9 +3,7 @@ services:
   backend:
     build:
       context: ./backend
-      args:
-        ENVIRONMENT: ${ENVIRONMENT}
-    container_name: backend
+    container_name: this_day_backend_server
     ports:
       - "8081:8081"
     restart: always
