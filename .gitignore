@@ -1,0 +1,71 @@
+############################
+# 🔐 Environment / Secrets
+############################
+.env
+.env.*
+!.env.example
+
+############################
+# ☕ Java / Gradle
+############################
+*.class
+*.jar
+*.war
+*.ear
+hs_err_pid*
+.gradle/
+build/
+out/
+target/
+.gradle.kts/
+
+############################
+# 🚀 Vert.x / Logs
+############################
+logs/
+*.log
+.vertx/
+
+############################
+# 🧠 Node / Frontend
+############################
+node_modules/
+dist/
+build/
+.next/
+out/
+.cache/
+.vite/
+.eslintcache
+pnpm-lock.yaml
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+############################
+# 🐳 Docker
+############################
+*.tar
+docker-compose.override.yml
+
+############################
+# 🧪 Test / Coverage
+############################
+coverage/
+*.lcov
+
+############################
+# 🖥️ OS junk
+############################
+.DS_Store
+Thumbs.db
+
+############################
+# 🛠️ IDEs / Editors
+############################
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*.bak
