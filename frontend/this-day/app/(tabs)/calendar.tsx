@@ -22,13 +22,21 @@ const GAP = 8;
 const DAY_SIZE =
   (SCREEN_WIDTH - MARGIN * 2 - GAP * (COLUMN_COUNT - 1)) / COLUMN_COUNT;
 
+/**
+ * 🔧 Helper: get today's date string in IST (YYYY-MM-DD)
+ */
+function getTodayISTString() {
+  const now = new Date();
+  const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+  return ist.toISOString().split("T")[0];
+}
+
 export default function CalendarScreen() {
   const router = useRouter();
   const [entries, setEntries] = useState<Record<string, any>>({});
   const loadedMonths = useRef<Set<string>>(new Set());
 
-  const todayDate = new Date();
-  const todayString = todayDate.toISOString().split("T")[0];
+  const todayString = getTodayISTString();
   const currentMonth = todayString.substring(0, 7) + "-01";
 
   const loadMonth = async (year: number, month: number) => {
@@ -40,7 +48,7 @@ export default function CalendarScreen() {
       const res = await getCalendar(year, month);
       const map: Record<string, any> = {};
       res.data.forEach((d: any) => {
-        map[d.date] = d;
+        map[d.date] = d; // date is already YYYY-MM-DD
       });
       setEntries((prev) => ({ ...prev, ...map }));
     } catch (e) {
@@ -49,7 +57,8 @@ export default function CalendarScreen() {
   };
 
   useEffect(() => {
-    loadMonth(todayDate.getFullYear(), todayDate.getMonth() + 1);
+    const [y, m] = todayString.split("-").map(Number);
+    loadMonth(y, m);
   }, []);
 
   return (
@@ -90,8 +99,11 @@ export default function CalendarScreen() {
         }
         dayComponent={({ date, state }: any) => {
           const entry = entries[date.dateString];
-          const hasEntry = entry?.hasEntries;
+
+          // ✅ FIX: entry exists if immichAssetId exists
+          const hasEntry = !!entry?.immichAssetId;
           const assetId = entry?.immichAssetId;
+
           const isToday = date.dateString === todayString;
           const isFuture = date.dateString > todayString;
           const isDisabled = state === "disabled";
@@ -102,7 +114,7 @@ export default function CalendarScreen() {
                 if (isFuture) return;
 
                 router.push({
-                  pathname: "day/[date]", // ✅ stays inside (tabs)
+                  pathname: "day/[date]",
                   params: {
                     date: date.dateString,
                     from: "calendar",

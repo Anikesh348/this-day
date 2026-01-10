@@ -1,16 +1,18 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useState } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
   View,
 } from "react-native";
+import { Calendar } from "react-native-calendars";
 
 import { Screen } from "@/components/Screen";
 import { Body, Muted, Title } from "@/components/Text";
@@ -25,33 +27,42 @@ export default function AddEntryScreen() {
     from?: "today" | "calendar";
   }>();
 
-  /** Forced backfill when coming from calendar/day */
+  /** Forced backfill */
   const forcedBackfill = mode === "backfill" && !!date;
 
-  /** Toggle only allowed when NOT forced */
+  /** State */
   const [entryMode, setEntryMode] = useState<"today" | "past">("today");
-
   const [pastDate, setPastDate] = useState<Date>(
     date ? new Date(date) : new Date()
   );
-
-  const isBackfill = forcedBackfill || entryMode === "past";
+  const [showCalendar, setShowCalendar] = useState(false);
 
   const [caption, setCaption] = useState("");
   const [media, setMedia] = useState<ImagePicker.ImagePickerAsset[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
+  const isBackfill = forcedBackfill || entryMode === "past";
+
+  /**
+   * ✅ RESET STATE on focus
+   */
+  useFocusEffect(
+    useCallback(() => {
+      setCaption("");
+      setMedia([]);
+      setSubmitting(false);
+      setEntryMode("today");
+      setPastDate(date ? new Date(date) : new Date());
+      setShowCalendar(false);
+    }, [date])
+  );
+
   /** 🔙 Back navigation */
   const handleBack = () => {
-    if (from === "today") {
-      router.replace("/today");
-    } else if (from === "calendar") {
-      router.replace("/calendar");
-    } else if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace("/today");
-    }
+    if (from === "today") router.replace("/today");
+    else if (from === "calendar") router.replace("/calendar");
+    else if (router.canGoBack()) router.back();
+    else router.replace("/today");
   };
 
   /** 🖼 Gallery */
@@ -67,7 +78,7 @@ export default function AddEntryScreen() {
     }
   };
 
-  /** 📸 Camera (ONLY for today) */
+  /** 📸 Camera */
   const captureFromCamera = async () => {
     if (isBackfill) return;
 
@@ -109,6 +120,8 @@ export default function AddEntryScreen() {
     }
   };
 
+  const pastDateString = pastDate.toISOString().slice(0, 10);
+
   return (
     <Screen>
       {/* Top bar */}
@@ -122,10 +135,7 @@ export default function AddEntryScreen() {
         </Pressable>
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scroll}
-      >
+      <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.card}>
           <Title>{isBackfill ? "Add Memory" : "Add Entry"}</Title>
 
@@ -135,7 +145,7 @@ export default function AddEntryScreen() {
               : "Capture this moment"}
           </Muted>
 
-          {/* Toggle only when from Today */}
+          {/* Toggle */}
           {!forcedBackfill && (
             <View style={styles.toggle}>
               {["today", "past"].map((v) => (
@@ -153,6 +163,28 @@ export default function AddEntryScreen() {
             </View>
           )}
 
+          {/* 📅 Past date selector */}
+          {!forcedBackfill && entryMode === "past" && (
+            <Pressable
+              style={styles.dateRow}
+              onPress={() => setShowCalendar(true)}
+            >
+              <Ionicons
+                name="calendar-outline"
+                size={18}
+                color={Colors.dark.textMuted}
+              />
+              <Body>
+                {pastDate.toLocaleDateString(undefined, {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </Body>
+            </Pressable>
+          )}
+
           {/* Caption */}
           <TextInput
             value={caption}
@@ -163,7 +195,7 @@ export default function AddEntryScreen() {
             style={styles.input}
           />
 
-          {/* Media Preview */}
+          {/* Media preview */}
           {media.length > 0 && (
             <View style={styles.grid}>
               {media.map((m, i) => (
@@ -172,7 +204,7 @@ export default function AddEntryScreen() {
             </View>
           )}
 
-          {/* Media actions */}
+          {/* Actions */}
           <View style={styles.actions}>
             <Pressable style={styles.actionBtn} onPress={addFromGallery}>
               <Ionicons
@@ -208,20 +240,49 @@ export default function AddEntryScreen() {
           </Pressable>
         </View>
       </ScrollView>
+
+      {/* 📅 Calendar Modal */}
+      <Modal visible={showCalendar} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Calendar
+              current={pastDateString}
+              maxDate={new Date().toISOString().slice(0, 10)}
+              onDayPress={(day) => {
+                setPastDate(new Date(`${day.dateString}T00:00:00`));
+                setShowCalendar(false);
+              }}
+              theme={{
+                calendarBackground: Colors.dark.surface,
+                dayTextColor: Colors.dark.textPrimary,
+                monthTextColor: Colors.dark.textPrimary,
+                selectedDayBackgroundColor: Colors.dark.accent,
+                todayTextColor: Colors.dark.accent,
+                arrowColor: Colors.dark.textPrimary,
+              }}
+              markedDates={{
+                [pastDateString]: {
+                  selected: true,
+                },
+              }}
+            />
+
+            <Pressable
+              style={styles.closeBtn}
+              onPress={() => setShowCalendar(false)}
+            >
+              <Body>Close</Body>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  topBar: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-
-  scroll: {
-    paddingVertical: 24,
-    alignItems: "center",
-  },
+  topBar: { paddingHorizontal: 16, paddingTop: 8 },
+  scroll: { paddingVertical: 24, alignItems: "center" },
 
   card: {
     width: "100%",
@@ -237,18 +298,29 @@ const styles = StyleSheet.create({
     marginTop: 16,
     flexDirection: "row",
     backgroundColor: Colors.dark.surfaceAlt,
-    borderRadius: 18,
-    overflow: "hidden",
+    borderRadius: 20,
+    padding: 4, // ⬅ important
   },
 
   toggleBtn: {
     flex: 1,
     paddingVertical: 10,
     alignItems: "center",
+    borderRadius: 16, // ⬅ button owns curve
   },
 
   toggleActive: {
     backgroundColor: Colors.dark.accent,
+  },
+
+  dateRow: {
+    marginTop: 14,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: Colors.dark.surfaceAlt,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
 
   input: {
@@ -259,29 +331,12 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.surfaceAlt,
     color: Colors.dark.textPrimary,
     fontSize: 16,
-    textAlignVertical: "top",
   },
 
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginTop: 16,
-  },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 16 },
+  image: { width: "48%", height: 120, borderRadius: 14 },
 
-  image: {
-    width: "48%",
-    height: 120,
-    borderRadius: 14,
-    backgroundColor: "#000",
-  },
-
-  actions: {
-    marginTop: 20,
-    flexDirection: "row",
-    gap: 12,
-  },
-
+  actions: { marginTop: 20, flexDirection: "row", gap: 12 },
   actionBtn: {
     flex: 1,
     flexDirection: "row",
@@ -298,6 +353,30 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 22,
     backgroundColor: Colors.dark.accent,
+    alignItems: "center",
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,1)", // ⬅ darker overlay
+    justifyContent: "center",
+    padding: 20,
+  },
+
+  modalCard: {
+    backgroundColor: Colors.dark.surface, // ⬅ solid background
+    borderRadius: 22,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.5,
+    shadowRadius: 30,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 20, // ⬅ Android/Web depth
+  },
+
+  closeBtn: {
+    marginTop: 12,
+    padding: 12,
     alignItems: "center",
   },
 });

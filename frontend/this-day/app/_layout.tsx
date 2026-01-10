@@ -1,5 +1,5 @@
 import { ClerkProvider, useAuth } from "@clerk/clerk-expo";
-import { Slot, useRouter } from "expo-router";
+import { Slot, usePathname, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useEffect } from "react";
 import { ActivityIndicator, Platform, View } from "react-native";
@@ -22,18 +22,28 @@ const tokenCache =
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     if (!isLoaded) return;
 
+    // ❌ Not logged in → always go to login
     if (!isSignedIn) {
-      router.replace("/login");
+      if (pathname !== "/login") {
+        router.replace("/login");
+      }
+      return;
     }
-  }, [isLoaded, isSignedIn]);
+
+    // ✅ Logged in + root path → redirect to today
+    if (isSignedIn && pathname === "/") {
+      router.replace("/today");
+    }
+  }, [isLoaded, isSignedIn, pathname]);
 
   if (!isLoaded) {
     return (
-      <View style={{ flex: 1, justifyContent: "center" }}>
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
         <ActivityIndicator />
       </View>
     );

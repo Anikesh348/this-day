@@ -45,9 +45,6 @@ export default function DayViewScreen() {
       .finally(() => setLoading(false));
   }, [date]);
 
-  /**
-   * ✅ Correct back behavior
-   */
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -61,9 +58,6 @@ export default function DayViewScreen() {
     }
   };
 
-  /**
-   * ➕ Add backfilled entry
-   */
   const handleAdd = () => {
     router.push({
       pathname: "/add",
@@ -74,17 +68,12 @@ export default function DayViewScreen() {
     });
   };
 
-  /**
-   * 🗑 Delete entry (FULLY SAFE)
-   */
   const performDelete = async (entryId: string) => {
     try {
       setDeletingId(entryId);
       await deleteEntry(entryId);
       setEntries((prev) => prev.filter((e) => e._id !== entryId));
     } catch (err) {
-      console.error("Delete failed", err);
-
       Alert.alert(
         "Delete failed",
         "Could not delete the entry. Please try again."
@@ -96,8 +85,9 @@ export default function DayViewScreen() {
 
   const confirmDelete = (entryId: string) => {
     if (Platform.OS === "web") {
-      const ok = window.confirm("This entry will be permanently deleted.");
-      if (ok) performDelete(entryId);
+      if (window.confirm("This entry will be permanently deleted.")) {
+        performDelete(entryId);
+      }
       return;
     }
 
@@ -147,27 +137,38 @@ export default function DayViewScreen() {
       >
         {entries.map((entry) => (
           <View key={entry._id} style={styles.entryCard}>
-            {/* Delete */}
-            <Pressable
-              style={styles.deleteBtn}
-              onPress={() => confirmDelete(entry._id)}
-              disabled={deletingId === entry._id}
-            >
-              <Ionicons
-                name="trash-outline"
-                size={18}
-                color={
-                  deletingId === entry._id
-                    ? Colors.dark.textMuted
-                    : Colors.dark.textPrimary
-                }
-              />
-            </Pressable>
+            {/* Header row */}
+            <View style={styles.entryHeader}>
+              <Muted style={styles.time}>
+                {new Date(entry.createdAt).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </Muted>
 
+              <Pressable
+                onPress={() => confirmDelete(entry._id)}
+                disabled={deletingId === entry._id}
+                hitSlop={10}
+              >
+                <Ionicons
+                  name="trash-outline"
+                  size={18}
+                  color={
+                    deletingId === entry._id
+                      ? Colors.dark.textMuted
+                      : Colors.dark.textPrimary
+                  }
+                />
+              </Pressable>
+            </View>
+
+            {/* Caption */}
             {entry.caption && (
               <Body style={styles.caption}>{entry.caption}</Body>
             )}
 
+            {/* Media */}
             {entry.immichAssetIds?.filter(Boolean).length > 0 && (
               <View style={styles.mediaGrid}>
                 {entry.immichAssetIds.filter(Boolean).map((assetId) => (
@@ -181,13 +182,6 @@ export default function DayViewScreen() {
                 ))}
               </View>
             )}
-
-            <Muted style={styles.time}>
-              {new Date(entry.createdAt).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </Muted>
           </View>
         ))}
 
@@ -223,15 +217,13 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderWidth: 1,
     borderColor: Colors.dark.border,
-    position: "relative",
   },
 
-  deleteBtn: {
-    position: "absolute",
-    top: 12,
-    right: 12,
-    padding: 6,
-    zIndex: 2,
+  entryHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
   },
 
   caption: {
@@ -244,7 +236,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
-    marginTop: 6,
   },
 
   image: {
@@ -255,8 +246,6 @@ const styles = StyleSheet.create({
   },
 
   time: {
-    marginTop: 10,
-    textAlign: "right",
     fontSize: 12,
   },
 
