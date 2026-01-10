@@ -7,3 +7,10 @@ services:
     ports:
       - "8081:8081"
     restart: always
+  frontend:
+    build:
+      context: ./frontend/this-day
+    container_name: this_day_frontend_server
+    ports:
+     - "3001:3001"
+    restart: always

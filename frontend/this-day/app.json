@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "This Day",
+    "slug": "this-day",
+    "scheme": "thisday",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.anikesh348.thisday"
+    },
+    "android": {
+      "package": "com.anikesh348.thisday"
+    }
+  }
+}
