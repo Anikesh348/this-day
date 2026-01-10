@@ -32,11 +32,13 @@ export default function AddEntryScreen() {
 
   /** State */
   const [entryMode, setEntryMode] = useState<"today" | "past">("today");
-  const [pastDate, setPastDate] = useState<Date>(
-    date ? new Date(date) : new Date()
-  );
-  const [showCalendar, setShowCalendar] = useState(false);
 
+  // ✅ FIX: store past date as YYYY-MM-DD string (NOT Date)
+  const [pastDateString, setPastDateString] = useState<string>(
+    date ?? new Date().toISOString().slice(0, 10)
+  );
+
+  const [showCalendar, setShowCalendar] = useState(false);
   const [caption, setCaption] = useState("");
   const [media, setMedia] = useState<ImagePicker.ImagePickerAsset[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -52,7 +54,7 @@ export default function AddEntryScreen() {
       setMedia([]);
       setSubmitting(false);
       setEntryMode("today");
-      setPastDate(date ? new Date(date) : new Date());
+      setPastDateString(date ?? new Date().toISOString().slice(0, 10));
       setShowCalendar(false);
     }, [date])
   );
@@ -106,7 +108,8 @@ export default function AddEntryScreen() {
       }));
 
       if (isBackfill) {
-        const d = forcedBackfill ? date! : pastDate.toISOString().slice(0, 10);
+        // ✅ FIX: send YYYY-MM-DD directly (NO ISO conversion)
+        const d = forcedBackfill ? date! : pastDateString;
         await createBackfilledEntry(d, caption, files);
       } else {
         await createEntry(caption, files);
@@ -117,8 +120,6 @@ export default function AddEntryScreen() {
       setSubmitting(false);
     }
   };
-
-  const pastDateString = pastDate.toISOString().slice(0, 10);
 
   return (
     <Screen>
@@ -139,7 +140,7 @@ export default function AddEntryScreen() {
 
           <Muted>
             {forcedBackfill
-              ? `For ${new Date(date!).toDateString()}`
+              ? `For ${new Date(`${date}T00:00:00`).toDateString()}`
               : "Capture this moment"}
           </Muted>
 
@@ -173,12 +174,15 @@ export default function AddEntryScreen() {
                 color={Colors.dark.textMuted}
               />
               <Body>
-                {pastDate.toLocaleDateString(undefined, {
-                  weekday: "short",
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })}
+                {new Date(`${pastDateString}T00:00:00`).toLocaleDateString(
+                  undefined,
+                  {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  }
+                )}
               </Body>
             </Pressable>
           )}
@@ -202,7 +206,7 @@ export default function AddEntryScreen() {
             </View>
           )}
 
-          {/* Actions — ALWAYS visible */}
+          {/* Actions */}
           <View style={styles.actions}>
             <Pressable style={styles.actionBtn} onPress={addFromGallery}>
               <Ionicons
@@ -245,7 +249,8 @@ export default function AddEntryScreen() {
               current={pastDateString}
               maxDate={new Date().toISOString().slice(0, 10)}
               onDayPress={(day) => {
-                setPastDate(new Date(`${day.dateString}T00:00:00`));
+                // ✅ FIX: use dateString directly
+                setPastDateString(day.dateString);
                 setShowCalendar(false);
               }}
               theme={{
