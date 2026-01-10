@@ -19,7 +19,6 @@ public class MediaRoutes {
 
         // GET Immich asset (thumbnail or full)
         router.get("/api/media/immich/:assetId")
-                .handler(authHandler)
                 .handler(ctx -> {
 
                     String assetId = ctx.pathParam("assetId");

@@ -67,21 +67,19 @@ public class EntryReadRepository {
 
         JsonArray pipeline = new JsonArray()
 
-                // 1️⃣ Match: same user, same year, same day-of-month, <= today
+                // 1️⃣ Match: same user, same year, same day-of-month, BEFORE today
                 .add(new JsonObject().put("$match",
                         new JsonObject()
                                 .put("userId", userId)
                                 .put("date", new JsonObject()
                                         .put("$regex", "^" + yearPrefix + ".*" + daySuffix + "$")
-                                        .put("$lte", cutoffDate) // ✅ include today
+                                        .put("$lt", cutoffDate) // ❌ exclude today
                                 )
                 ))
 
                 // 2️⃣ Add helper fields
                 .add(new JsonObject().put("$addFields",
                         new JsonObject()
-
-                                // Extract month from date (YYYY-MM-DD)
                                 .put("month",
                                         new JsonObject().put("$toInt",
                                                 new JsonObject().put("$substr",
@@ -89,8 +87,6 @@ public class EntryReadRepository {
                                                 )
                                         )
                                 )
-
-                                // hasMedia = immichAssetIds contains at least one non-null value
                                 .put("hasMedia",
                                         new JsonObject().put("$gt", new JsonArray()
                                                 .add(new JsonObject()
@@ -110,8 +106,6 @@ public class EntryReadRepository {
                                                 .add(0)
                                         )
                                 )
-
-                                // hasCaption = caption length > 0
                                 .put("hasCaption",
                                         new JsonObject().put("$gt", new JsonArray()
                                                 .add(new JsonObject()
@@ -126,33 +120,29 @@ public class EntryReadRepository {
                                 )
                 ))
 
-                // 3️⃣ Sort so best entry per month comes first
+                // 3️⃣ Sort best-first per month
                 .add(new JsonObject().put("$sort",
                         new JsonObject()
                                 .put("month", 1)
                                 .put("hasMedia", -1)
                                 .put("hasCaption", -1)
-                                .put("createdAt", 1) // earliest best entry
+                                .put("createdAt", 1)
                 ))
 
-                // 4️⃣ Group by month → pick best entry
+                // 4️⃣ One per month
                 .add(new JsonObject().put("$group",
                         new JsonObject()
                                 .put("_id", "$month")
                                 .put("entry", new JsonObject().put("$first", "$$ROOT"))
                 ))
 
-                // 5️⃣ Flatten document
                 .add(new JsonObject().put("$replaceRoot",
                         new JsonObject().put("newRoot", "$entry")
                 ))
 
-                // 6️⃣ Final sort for UI
                 .add(new JsonObject().put("$sort",
                         new JsonObject().put("date", 1)
                 ));
-
-        log.debug("Mongo findSameDayPreviousMonths pipeline={}", pipeline);
 
         Promise<List<JsonObject>> promise = Promise.promise();
         List<JsonObject> results = new ArrayList<>();
@@ -162,13 +152,9 @@ public class EntryReadRepository {
                 .endHandler(v -> promise.complete(results))
                 .exceptionHandler(promise::fail);
 
-        return promise.future()
-                .onSuccess(res ->
-                        log.debug("findSameDayPreviousMonths returned {} entries", res.size()))
-                .onFailure(err ->
-                        log.error("Mongo findSameDayPreviousMonths failed", err))
-                .map(JsonArray::new);
+        return promise.future().map(JsonArray::new);
     }
+
 
 
     /**
@@ -177,32 +163,31 @@ public class EntryReadRepository {
      * Uses dayMonth only (MM-DD)
      */
     public Future<JsonArray> findSameDayBestEntriesPerYear(
-            String userId, int month, int day
+            String userId, int year, int month, int day
     ) {
         String dayMonth = String.format("%02d-%02d", month, day);
+        String today = String.format("%04d-%02d-%02d", year, month, day);
 
         JsonArray pipeline = new JsonArray()
 
-                // 1. Match same user + same day-month
+                // 1️⃣ Match same user + same day-month, BEFORE today
                 .add(new JsonObject().put("$match",
                         new JsonObject()
                                 .put("userId", userId)
                                 .put("dayMonth", dayMonth)
+                                .put("date", new JsonObject().put("$lt", today)) // ❌ exclude today
                 ))
 
-                // 2. Compute helper fields
+                // 2️⃣ Helper fields
                 .add(new JsonObject().put("$addFields",
                         new JsonObject()
-                                // Extract year from date (YYYY-MM-DD)
                                 .put("year",
                                         new JsonObject().put("$toInt",
-                                                new JsonObject().put("$substr", new JsonArray()
-                                                        .add("$date").add(0).add(4)
+                                                new JsonObject().put("$substr",
+                                                        new JsonArray().add("$date").add(0).add(4)
                                                 )
                                         )
                                 )
-
-                                // hasMedia = immichAssetIds contains at least one non-null value
                                 .put("hasMedia",
                                         new JsonObject().put("$gt", new JsonArray()
                                                 .add(new JsonObject()
@@ -222,8 +207,6 @@ public class EntryReadRepository {
                                                 .add(0)
                                         )
                                 )
-
-                                // hasCaption = caption length > 0
                                 .put("hasCaption",
                                         new JsonObject().put("$gt", new JsonArray()
                                                 .add(new JsonObject()
@@ -238,33 +221,29 @@ public class EntryReadRepository {
                                 )
                 ))
 
-                // 3. Sort so best entry of each year comes first
+                // 3️⃣ Best-first per year
                 .add(new JsonObject().put("$sort",
                         new JsonObject()
-                                .put("year", 1)        // important for grouping
+                                .put("year", 1)
                                 .put("hasMedia", -1)
                                 .put("hasCaption", -1)
-                                .put("createdAt", 1)   // deterministic pick
+                                .put("createdAt", 1)
                 ))
 
-                // 4. Group by year, pick first (best) entry
+                // 4️⃣ One per year
                 .add(new JsonObject().put("$group",
                         new JsonObject()
                                 .put("_id", "$year")
                                 .put("entry", new JsonObject().put("$first", "$$ROOT"))
                 ))
 
-                // 5. Replace root so output is entry itself
                 .add(new JsonObject().put("$replaceRoot",
                         new JsonObject().put("newRoot", "$entry")
                 ))
 
-                // 6. Final sort by date/year for clean UI consumption
                 .add(new JsonObject().put("$sort",
                         new JsonObject().put("date", 1)
                 ));
-
-        log.debug("Mongo aggregation findSameDayBestEntriesPerYear pipeline={}", pipeline);
 
         Promise<List<JsonObject>> promise = Promise.promise();
         List<JsonObject> results = new ArrayList<>();
@@ -274,13 +253,81 @@ public class EntryReadRepository {
                 .endHandler(v -> promise.complete(results))
                 .exceptionHandler(promise::fail);
 
-        return promise.future()
-                .onSuccess(res ->
-                        log.debug("findSameDayBestEntriesPerYear returned {} entries", res.size()))
-                .onFailure(err ->
-                        log.error("Mongo findSameDayBestEntriesPerYear failed", err))
-                .map(JsonArray::new);
+        return promise.future().map(JsonArray::new);
     }
+
+    public Future<JsonArray> findTodaySummary(
+            String userId, int year, int month, int day
+    ) {
+        String today = String.format("%04d-%02d-%02d", year, month, day);
+
+        JsonArray pipeline = new JsonArray()
+
+                // 1️⃣ Match only today
+                .add(new JsonObject().put("$match",
+                        new JsonObject()
+                                .put("userId", userId)
+                                .put("date", today)
+                ))
+
+                // 2️⃣ Helper fields
+                .add(new JsonObject().put("$addFields",
+                        new JsonObject()
+                                .put("hasMedia",
+                                        new JsonObject().put("$gt", new JsonArray()
+                                                .add(new JsonObject()
+                                                        .put("$size",
+                                                                new JsonObject().put("$filter",
+                                                                        new JsonObject()
+                                                                                .put("input", "$immichAssetIds")
+                                                                                .put("as", "id")
+                                                                                .put("cond",
+                                                                                        new JsonObject().put("$ne",
+                                                                                                new JsonArray().add("$$id").add(null)
+                                                                                        )
+                                                                                )
+                                                                )
+                                                        )
+                                                )
+                                                .add(0)
+                                        )
+                                )
+                                .put("hasCaption",
+                                        new JsonObject().put("$gt", new JsonArray()
+                                                .add(new JsonObject()
+                                                        .put("$strLenCP",
+                                                                new JsonObject().put("$ifNull",
+                                                                        new JsonArray().add("$caption").add("")
+                                                                )
+                                                        )
+                                                )
+                                                .add(0)
+                                        )
+                                )
+                ))
+
+                // 3️⃣ Pick best entry for today
+                .add(new JsonObject().put("$sort",
+                        new JsonObject()
+                                .put("hasMedia", -1)
+                                .put("hasCaption", -1)
+                                .put("createdAt", 1)
+                ))
+
+                .add(new JsonObject().put("$limit", 1));
+
+        Promise<List<JsonObject>> promise = Promise.promise();
+        List<JsonObject> results = new ArrayList<>();
+
+        mongo.aggregate(Collections.ENTRIES, pipeline)
+                .handler(results::add)
+                .endHandler(v -> promise.complete(results))
+                .exceptionHandler(promise::fail);
+
+        return promise.future().map(JsonArray::new);
+    }
+
+
 
 
     /**

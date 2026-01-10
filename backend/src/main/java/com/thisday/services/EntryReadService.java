@@ -53,6 +53,7 @@ public class EntryReadService {
 
     public void getSameDayPreviousYears(
             String userId,
+            int year,
             int month,
             int day,
             Handler<AsyncResult<JsonArray>> handler
@@ -62,9 +63,26 @@ public class EntryReadService {
                 userId, month, day
         );
 
-        repository.findSameDayBestEntriesPerYear(userId, month, day)
+        repository.findSameDayBestEntriesPerYear(userId, year, month, day)
                 .onComplete(handler);
     }
+
+    public void getTodaySummary(
+            String userId,
+            int year,
+            int month,
+            int day,
+            Handler<AsyncResult<JsonArray>> handler
+    ) {
+        log.debug(
+                "Service: getTodaySummary user={} date={}-{}-{}",
+                userId, year, month, day
+        );
+
+        repository.findTodaySummary(userId, year, month, day)
+                .onComplete(handler);
+    }
+
 
     public void getCalendarEntries(
             String userId,

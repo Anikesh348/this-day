@@ -93,14 +93,15 @@ public class EntryReadRoutes {
 
                     int month = Integer.parseInt(ctx.request().getParam("month"));
                     int day = Integer.parseInt(ctx.request().getParam("day"));
-
+                    int year = Integer.parseInt(ctx.request().getParam("year"));
                     log.info(
                             "Fetching same-day previous years user={} dayMonth={}-{}",
                             userId, month, day
                     );
 
+
                     entryReadService.getSameDayPreviousYears(
-                            userId, month, day, ar -> {
+                            userId, year,  month, day, ar -> {
                                 if (ar.failed()) {
                                     log.error("Get same-day previous years failed", ar.cause());
                                     ctx.fail(500);
@@ -112,6 +113,39 @@ public class EntryReadRoutes {
                             }
                     );
                 });
+
+
+        router.get("/api/entries/day/summary")
+                .handler(authHandler)
+                .handler(ctx -> {
+
+                    String userId =
+                            ctx.<io.vertx.core.json.JsonObject>get("authUser")
+                                    .getString("sub");
+
+                    int year = Integer.parseInt(ctx.request().getParam("year"));
+                    int month = Integer.parseInt(ctx.request().getParam("month"));
+                    int day = Integer.parseInt(ctx.request().getParam("day"));
+
+                    log.info(
+                            "Fetching today summary user={} date={}-{}-{}",
+                            userId, year, month, day
+                    );
+
+                    entryReadService.getTodaySummary(
+                            userId, year, month, day, ar -> {
+                                if (ar.failed()) {
+                                    log.error("Get today summary failed", ar.cause());
+                                    ctx.fail(500);
+                                } else {
+                                    ctx.response()
+                                            .putHeader("Content-Type", "application/json")
+                                            .end(ar.result().encode());
+                                }
+                            }
+                    );
+                });
+
 
         // 4️⃣ Calendar-wise entries
         router.get("/api/entries/calendar")
