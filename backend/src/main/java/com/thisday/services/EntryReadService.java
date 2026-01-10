@@ -62,7 +62,7 @@ public class EntryReadService {
                 userId, month, day
         );
 
-        repository.findSameDayPreviousYears(userId, month, day)
+        repository.findSameDayBestEntriesPerYear(userId, month, day)
                 .onComplete(handler);
     }
 
