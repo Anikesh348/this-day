@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -42,20 +43,28 @@ public class EntryService {
                 return;
             }
 
-            LocalDate today = LocalDate.now();
+            ZoneId IST = ZoneId.of("Asia/Kolkata");
+            LocalDate todayIst = LocalDate.now(IST);
 
             Entry entry = new Entry();
             entry.userId = userId;
             entry.caption = caption;
             entry.immichAssetIds = ar.result();
-            entry.date = today;
-            entry.dayMonth = String.format("%02d-%02d",
-                    today.getMonthValue(), today.getDayOfMonth());
-            entry.createdAt = Instant.now();
+
+            entry.date = todayIst;
+
+            entry.dayMonth = String.format(
+                    "%02d-%02d",
+                    todayIst.getMonthValue(),
+                    todayIst.getDayOfMonth()
+            );
+
+            entry.createdAt = Instant.now(); // UTC
 
             entryRepository.insert(entry, handler);
         });
     }
+
 
     public void createPastEntry(
             String userId,
