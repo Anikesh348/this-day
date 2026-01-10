@@ -15,8 +15,10 @@ import com.thisday.services.EntryService;
 import com.thisday.services.MediaService;
 import com.thisday.services.UserService;
 import io.vertx.core.*;
+import io.vertx.core.http.HttpMethod;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
+import io.vertx.ext.web.handler.CorsHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,6 +33,14 @@ public class ThisDayVerticle extends AbstractVerticle {
 
         Router router = Router.router(vertx);
         router.route().handler(BodyHandler.create());
+        router.route().handler(
+                CorsHandler.create()
+                        .allowedMethod(HttpMethod.GET)
+                        .allowedMethod(HttpMethod.POST)
+                        .allowedMethod(HttpMethod.OPTIONS)
+                        .allowedHeader("Content-Type")
+                        .allowedHeader("Authorization")
+        );
         log.debug("Router and BodyHandler initialized");
 
         log.info("Initializing MongoDB");
