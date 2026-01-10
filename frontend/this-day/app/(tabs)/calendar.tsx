@@ -1,5 +1,5 @@
-import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useRouter, useFocusEffect } from "expo-router";
+import { useCallback, useRef, useState } from "react";
 import {
   Dimensions,
   Image,
@@ -33,6 +33,7 @@ function getTodayISTString() {
 
 export default function CalendarScreen() {
   const router = useRouter();
+
   const [entries, setEntries] = useState<Record<string, any>>({});
   const loadedMonths = useRef<Set<string>>(new Set());
 
@@ -42,24 +43,38 @@ export default function CalendarScreen() {
   const loadMonth = async (year: number, month: number) => {
     const key = `${year}-${month}`;
     if (loadedMonths.current.has(key)) return;
+
     loadedMonths.current.add(key);
 
     try {
       const res = await getCalendar(year, month);
       const map: Record<string, any> = {};
+
       res.data.forEach((d: any) => {
-        map[d.date] = d; // date is already YYYY-MM-DD
+        map[d.date] = d; // YYYY-MM-DD
       });
+
       setEntries((prev) => ({ ...prev, ...map }));
     } catch (e) {
       console.error(e);
     }
   };
 
-  useEffect(() => {
-    const [y, m] = todayString.split("-").map(Number);
-    loadMonth(y, m);
-  }, []);
+  /**
+   * ✅ CRITICAL FIX
+   * Re-run whenever Calendar screen becomes active
+   */
+  useFocusEffect(
+    useCallback(() => {
+      // 🔥 Invalidate cache
+      loadedMonths.current.clear();
+      setEntries({});
+
+      // Reload current month
+      const [y, m] = todayString.split("-").map(Number);
+      loadMonth(y, m);
+    }, [todayString])
+  );
 
   return (
     <View style={styles.container}>
@@ -100,7 +115,6 @@ export default function CalendarScreen() {
         dayComponent={({ date, state }: any) => {
           const entry = entries[date.dateString];
 
-          // ✅ FIX: entry exists if immichAssetId exists
           const hasEntry = !!entry?.immichAssetId;
           const assetId = entry?.immichAssetId;
 

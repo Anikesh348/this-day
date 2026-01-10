@@ -78,10 +78,8 @@ export default function AddEntryScreen() {
     }
   };
 
-  /** 📸 Camera */
+  /** 📸 Camera (ALWAYS enabled) */
   const captureFromCamera = async () => {
-    if (isBackfill) return;
-
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) return;
 
@@ -204,7 +202,7 @@ export default function AddEntryScreen() {
             </View>
           )}
 
-          {/* Actions */}
+          {/* Actions — ALWAYS visible */}
           <View style={styles.actions}>
             <Pressable style={styles.actionBtn} onPress={addFromGallery}>
               <Ionicons
@@ -215,16 +213,14 @@ export default function AddEntryScreen() {
               <Body>Gallery</Body>
             </Pressable>
 
-            {!isBackfill && (
-              <Pressable style={styles.actionBtn} onPress={captureFromCamera}>
-                <Ionicons
-                  name="camera-outline"
-                  size={20}
-                  color={Colors.dark.accent}
-                />
-                <Body>Camera</Body>
-              </Pressable>
-            )}
+            <Pressable style={styles.actionBtn} onPress={captureFromCamera}>
+              <Ionicons
+                name="camera-outline"
+                size={20}
+                color={Colors.dark.accent}
+              />
+              <Body>Camera</Body>
+            </Pressable>
           </View>
 
           {/* Save */}
@@ -261,9 +257,7 @@ export default function AddEntryScreen() {
                 arrowColor: Colors.dark.textPrimary,
               }}
               markedDates={{
-                [pastDateString]: {
-                  selected: true,
-                },
+                [pastDateString]: { selected: true },
               }}
             />
 
@@ -299,14 +293,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     backgroundColor: Colors.dark.surfaceAlt,
     borderRadius: 20,
-    padding: 4, // ⬅ important
+    padding: 4,
   },
 
   toggleBtn: {
     flex: 1,
     paddingVertical: 10,
     alignItems: "center",
-    borderRadius: 16, // ⬅ button owns curve
+    borderRadius: 16,
   },
 
   toggleActive: {
@@ -337,6 +331,7 @@ const styles = StyleSheet.create({
   image: { width: "48%", height: 120, borderRadius: 14 },
 
   actions: { marginTop: 20, flexDirection: "row", gap: 12 },
+
   actionBtn: {
     flex: 1,
     flexDirection: "row",
@@ -358,20 +353,20 @@ const styles = StyleSheet.create({
 
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,1)", // ⬅ darker overlay
+    backgroundColor: "rgba(0,0,0,1)",
     justifyContent: "center",
     padding: 20,
   },
 
   modalCard: {
-    backgroundColor: Colors.dark.surface, // ⬅ solid background
+    backgroundColor: Colors.dark.surface,
     borderRadius: 22,
     padding: 16,
     shadowColor: "#000",
     shadowOpacity: 0.5,
     shadowRadius: 30,
     shadowOffset: { width: 0, height: 10 },
-    elevation: 20, // ⬅ Android/Web depth
+    elevation: 20,
   },
 
   closeBtn: {

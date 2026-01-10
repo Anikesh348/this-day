@@ -1,8 +1,6 @@
-// app/(tabs)/today.tsx
-
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useRouter, useFocusEffect } from "expo-router";
+import { useCallback, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { Screen } from "@/components/Screen";
@@ -28,33 +26,52 @@ export default function TodayScreen() {
   const [previous, setPrevious] = useState<Entry | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  /**
+   * ✅ Fetch logic (reusable)
+   */
+  const loadData = async () => {
+    setLoading(true);
+
     const d = new Date();
     const y = d.getFullYear();
     const m = d.getMonth() + 1;
     const day = d.getDate();
 
-    Promise.allSettled([
+    const [todayRes, yearRes, monthRes] = await Promise.allSettled([
       getSameDaySummary(y, m, day),
       getSameDayPreviousYears(y, m, day),
       getSameDayPreviousMonths(y, m, day),
-    ]).then(([todayRes, yearRes, monthRes]) => {
-      if (todayRes.status === "fulfilled" && todayRes.value.data?.length > 0) {
-        setToday(todayRes.value.data[0]);
-      }
+    ]);
 
-      if (yearRes.status === "fulfilled" && yearRes.value.data?.length > 0) {
-        setPrevious(yearRes.value.data[0]);
-      } else if (
-        monthRes.status === "fulfilled" &&
-        monthRes.value.data?.length > 0
-      ) {
-        setPrevious(monthRes.value.data[0]);
-      }
+    if (todayRes.status === "fulfilled" && todayRes.value.data?.length > 0) {
+      setToday(todayRes.value.data[0]);
+    } else {
+      setToday(null);
+    }
 
-      setLoading(false);
-    });
-  }, []);
+    if (yearRes.status === "fulfilled" && yearRes.value.data?.length > 0) {
+      setPrevious(yearRes.value.data[0]);
+    } else if (
+      monthRes.status === "fulfilled" &&
+      monthRes.value.data?.length > 0
+    ) {
+      setPrevious(monthRes.value.data[0]);
+    } else {
+      setPrevious(null);
+    }
+
+    setLoading(false);
+  };
+
+  /**
+   * ✅ CRITICAL FIX:
+   * Runs every time the screen becomes active
+   */
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [])
+  );
 
   const openDay = (date: string) => {
     router.push({
