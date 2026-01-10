@@ -38,6 +38,8 @@ public class ThisDayVerticle extends AbstractVerticle {
                         .allowedMethod(HttpMethod.GET)
                         .allowedMethod(HttpMethod.POST)
                         .allowedMethod(HttpMethod.OPTIONS)
+                        .allowedMethod(HttpMethod.DELETE)
+                        .allowedMethod(HttpMethod.PUT)
                         .allowedHeader("Content-Type")
                         .allowedHeader("Authorization")
         );
