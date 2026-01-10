@@ -28,8 +28,10 @@ public class EntryReadRepository {
                 this.mongo = MongoProvider.get(vertx);
         }
 
-        /**
-         * 1️⃣ Get all entries for a single IST day
+        /*
+         * =========================================================
+         * 1️⃣ Exact IST day
+         * =========================================================
          */
         public Future<JsonArray> findByExactDay(
                         String userId, int year, int month, int day) {
@@ -46,121 +48,56 @@ public class EntryReadRepository {
                                 .map(list -> normalizeDatesToIst(new JsonArray(list)));
         }
 
-        /**
-         * 2️⃣ Same day, previous months (same year) – IST aware
+        /*
+         * =========================================================
+         * 2️⃣ Same day – previous months
+         * =========================================================
          */
         public Future<JsonArray> findSameDayPreviousMonths(
                         String userId, int year, int month, int day) {
                 Instant todayStartUtc = TimeUtil.istStartToUtc(year, month, day);
 
                 JsonArray pipeline = new JsonArray()
-
+                                .add(matchUserAndBefore(userId, todayStartUtc))
+                                .add(addIstParts())
                                 .add(new JsonObject().put("$match",
                                                 new JsonObject()
-                                                                .put("userId", userId)
-                                                                .put("createdAt", new JsonObject()
-                                                                                .put("$lt", todayStartUtc.toString()))))
-
-                                .add(new JsonObject().put("$addFields",
-                                                new JsonObject()
-                                                                .put("month", new JsonObject().put("$month",
-                                                                                new JsonObject().put("$dateToParts",
-                                                                                                new JsonObject()
-                                                                                                                .put("date", "$createdAt")
-                                                                                                                .put("timezone", "Asia/Kolkata"))))
-                                                                .put("day", new JsonObject().put("$dayOfMonth",
-                                                                                new JsonObject().put("$dateToParts",
-                                                                                                new JsonObject()
-                                                                                                                .put("date", "$createdAt")
-                                                                                                                .put("timezone", "Asia/Kolkata"))))
-                                                                .put("hasMedia", hasMediaExpr())
-                                                                .put("hasCaption", hasCaptionExpr())))
-
-                                .add(new JsonObject().put("$match",
-                                                new JsonObject()
-                                                                .put("day", day)
-                                                                .put("month", new JsonObject().put("$lt", month))))
-
-                                .add(new JsonObject().put("$sort",
-                                                new JsonObject()
-                                                                .put("month", 1)
-                                                                .put("hasMedia", -1)
-                                                                .put("hasCaption", -1)
-                                                                .put("createdAt", 1)))
-
-                                .add(new JsonObject().put("$group",
-                                                new JsonObject()
-                                                                .put("_id", "$month")
-                                                                .put("entry", new JsonObject().put("$first",
-                                                                                "$$ROOT"))))
-
-                                .add(new JsonObject().put("$replaceRoot",
-                                                new JsonObject().put("newRoot", "$entry")));
+                                                                .put("ist.day", day)
+                                                                .put("ist.month", new JsonObject().put("$lt", month))))
+                                .add(bestFirstSort("ist.month"))
+                                .add(groupFirstBy("$ist.month"))
+                                .add(replaceRoot());
 
                 return aggregateAndNormalize(pipeline);
         }
 
-        /**
-         * 3️⃣ Same day, previous years – IST aware
+        /*
+         * =========================================================
+         * 3️⃣ Same day – previous years
+         * =========================================================
          */
         public Future<JsonArray> findSameDayBestEntriesPerYear(
                         String userId, int year, int month, int day) {
                 Instant todayStartUtc = TimeUtil.istStartToUtc(year, month, day);
 
                 JsonArray pipeline = new JsonArray()
-
+                                .add(matchUserAndBefore(userId, todayStartUtc))
+                                .add(addIstParts())
                                 .add(new JsonObject().put("$match",
                                                 new JsonObject()
-                                                                .put("userId", userId)
-                                                                .put("createdAt", new JsonObject()
-                                                                                .put("$lt", todayStartUtc.toString()))))
-
-                                .add(new JsonObject().put("$addFields",
-                                                new JsonObject()
-                                                                .put("year", new JsonObject().put("$year",
-                                                                                new JsonObject().put("$dateToParts",
-                                                                                                new JsonObject()
-                                                                                                                .put("date", "$createdAt")
-                                                                                                                .put("timezone", "Asia/Kolkata"))))
-                                                                .put("month", new JsonObject().put("$month",
-                                                                                new JsonObject().put("$dateToParts",
-                                                                                                new JsonObject()
-                                                                                                                .put("date", "$createdAt")
-                                                                                                                .put("timezone", "Asia/Kolkata"))))
-                                                                .put("day", new JsonObject().put("$dayOfMonth",
-                                                                                new JsonObject().put("$dateToParts",
-                                                                                                new JsonObject()
-                                                                                                                .put("date", "$createdAt")
-                                                                                                                .put("timezone", "Asia/Kolkata"))))
-                                                                .put("hasMedia", hasMediaExpr())
-                                                                .put("hasCaption", hasCaptionExpr())))
-
-                                .add(new JsonObject().put("$match",
-                                                new JsonObject()
-                                                                .put("day", day)
-                                                                .put("month", month)))
-
-                                .add(new JsonObject().put("$sort",
-                                                new JsonObject()
-                                                                .put("year", 1)
-                                                                .put("hasMedia", -1)
-                                                                .put("hasCaption", -1)
-                                                                .put("createdAt", 1)))
-
-                                .add(new JsonObject().put("$group",
-                                                new JsonObject()
-                                                                .put("_id", "$year")
-                                                                .put("entry", new JsonObject().put("$first",
-                                                                                "$$ROOT"))))
-
-                                .add(new JsonObject().put("$replaceRoot",
-                                                new JsonObject().put("newRoot", "$entry")));
+                                                                .put("ist.day", day)
+                                                                .put("ist.month", month)))
+                                .add(bestFirstSort("ist.year"))
+                                .add(groupFirstBy("$ist.year"))
+                                .add(replaceRoot());
 
                 return aggregateAndNormalize(pipeline);
         }
 
-        /**
-         * 4️⃣ Best entry for today (IST)
+        /*
+         * =========================================================
+         * 4️⃣ Today summary
+         * =========================================================
          */
         public Future<JsonArray> findTodaySummary(
                         String userId, int year, int month, int day) {
@@ -168,32 +105,23 @@ public class EntryReadRepository {
                 Instant endUtc = TimeUtil.istEndToUtc(year, month, day);
 
                 JsonArray pipeline = new JsonArray()
-
                                 .add(new JsonObject().put("$match",
                                                 new JsonObject()
                                                                 .put("userId", userId)
                                                                 .put("createdAt", new JsonObject()
                                                                                 .put("$gte", startUtc.toString())
                                                                                 .put("$lte", endUtc.toString()))))
-
-                                .add(new JsonObject().put("$addFields",
-                                                new JsonObject()
-                                                                .put("hasMedia", hasMediaExpr())
-                                                                .put("hasCaption", hasCaptionExpr())))
-
-                                .add(new JsonObject().put("$sort",
-                                                new JsonObject()
-                                                                .put("hasMedia", -1)
-                                                                .put("hasCaption", -1)
-                                                                .put("createdAt", 1)))
-
+                                .add(addMediaCaptionFlags())
+                                .add(bestFirstSort(null))
                                 .add(new JsonObject().put("$limit", 1));
 
                 return aggregateAndNormalize(pipeline);
         }
 
-        /**
-         * 5️⃣ Calendar view (IST month)
+        /*
+         * =========================================================
+         * 5️⃣ Calendar view
+         * =========================================================
          */
         public Future<JsonArray> findCalendarEntries(
                         String userId, int year, int month) {
@@ -206,61 +134,93 @@ public class EntryReadRepository {
                                 .toInstant();
 
                 JsonArray pipeline = new JsonArray()
-
                                 .add(new JsonObject().put("$match",
                                                 new JsonObject()
                                                                 .put("userId", userId)
                                                                 .put("createdAt", new JsonObject()
                                                                                 .put("$gte", startUtc.toString())
                                                                                 .put("$lte", endUtc.toString()))))
-
-                                .add(new JsonObject().put("$sort",
-                                                new JsonObject().put("createdAt", 1)))
-
+                                .add(new JsonObject().put("$addFields",
+                                                new JsonObject().put("ist",
+                                                                new JsonObject().put("$dateToParts",
+                                                                                new JsonObject()
+                                                                                                .put("date", new JsonObject()
+                                                                                                                .put("$toDate", "$createdAt"))
+                                                                                                .put("timezone", "Asia/Kolkata")))))
                                 .add(new JsonObject().put("$group",
                                                 new JsonObject()
                                                                 .put("_id", new JsonObject().put("$dateToString",
                                                                                 new JsonObject()
                                                                                                 .put("format", "%Y-%m-%d")
-                                                                                                .put("date", "$createdAt")
+                                                                                                .put("date", new JsonObject()
+                                                                                                                .put("$toDate", "$createdAt"))
                                                                                                 .put("timezone", "Asia/Kolkata")))
                                                                 .put("allAssets",
                                                                                 new JsonObject().put("$push",
                                                                                                 "$immichAssetIds"))))
-
                                 .add(new JsonObject().put("$project",
                                                 new JsonObject()
                                                                 .put("date", "$_id")
                                                                 .put("hasEntries", true)
-                                                                .put("immichAssetId", new JsonObject().put(
-                                                                                "$arrayElemAt",
-                                                                                new JsonArray()
-                                                                                                .add(new JsonObject()
-                                                                                                                .put("$filter",
-                                                                                                                                new JsonObject()
-                                                                                                                                                .put("input", new JsonObject()
-                                                                                                                                                                .put("$reduce",
-                                                                                                                                                                                new JsonObject()
-                                                                                                                                                                                                .put("input", "$allAssets")
-                                                                                                                                                                                                .put("initialValue",
-                                                                                                                                                                                                                new JsonArray())
-                                                                                                                                                                                                .put("in", new JsonObject()
-                                                                                                                                                                                                                .put("$concatArrays",
-                                                                                                                                                                                                                                new JsonArray()
-                                                                                                                                                                                                                                                .add("$$value")
-                                                                                                                                                                                                                                                .add("$$this")))))
-                                                                                                                                                .put("as", "a")
-                                                                                                                                                .put("cond", new JsonObject()
-                                                                                                                                                                .put("$ne",
-                                                                                                                                                                                new JsonArray().add(
-                                                                                                                                                                                                "$$a")
-                                                                                                                                                                                                .add(null)))))
-                                                                                                .add(0)))));
+                                                                .put("immichAssetId", firstValidAssetExpr())));
 
                 return aggregate(pipeline);
         }
 
-        /* ----------------------- Helpers ----------------------- */
+        /*
+         * =========================================================
+         * Helpers
+         * =========================================================
+         */
+
+        private JsonObject matchUserAndBefore(String userId, Instant beforeUtc) {
+                return new JsonObject().put("$match",
+                                new JsonObject()
+                                                .put("userId", userId)
+                                                .put("createdAt", new JsonObject()
+                                                                .put("$lt", beforeUtc.toString())));
+        }
+
+        private JsonObject addIstParts() {
+                return new JsonObject().put("$addFields",
+                                new JsonObject().put("ist",
+                                                new JsonObject().put("$dateToParts",
+                                                                new JsonObject()
+                                                                                .put("date", new JsonObject().put(
+                                                                                                "$toDate",
+                                                                                                "$createdAt"))
+                                                                                .put("timezone", "Asia/Kolkata"))));
+        }
+
+        private JsonObject bestFirstSort(String primary) {
+                JsonObject sort = new JsonObject();
+                if (primary != null) {
+                        sort.put(primary, 1);
+                }
+                sort.put("hasMedia", -1)
+                                .put("hasCaption", -1)
+                                .put("createdAt", 1);
+                return new JsonObject().put("$sort", sort);
+        }
+
+        private JsonObject groupFirstBy(String field) {
+                return new JsonObject().put("$group",
+                                new JsonObject()
+                                                .put("_id", field)
+                                                .put("entry", new JsonObject().put("$first", "$$ROOT")));
+        }
+
+        private JsonObject replaceRoot() {
+                return new JsonObject().put("$replaceRoot",
+                                new JsonObject().put("newRoot", "$entry"));
+        }
+
+        private JsonObject addMediaCaptionFlags() {
+                return new JsonObject().put("$addFields",
+                                new JsonObject()
+                                                .put("hasMedia", hasMediaExpr())
+                                                .put("hasCaption", hasCaptionExpr()));
+        }
 
         private JsonObject hasMediaExpr() {
                 return new JsonObject().put("$gt", new JsonArray()
@@ -281,6 +241,26 @@ public class EntryReadRepository {
                                 .add(new JsonObject().put("$strLenCP",
                                                 new JsonObject().put("$ifNull",
                                                                 new JsonArray().add("$caption").add(""))))
+                                .add(0));
+        }
+
+        private JsonObject firstValidAssetExpr() {
+                return new JsonObject().put("$arrayElemAt", new JsonArray()
+                                .add(new JsonObject().put("$filter",
+                                                new JsonObject()
+                                                                .put("input", new JsonObject().put("$reduce",
+                                                                                new JsonObject()
+                                                                                                .put("input", "$allAssets")
+                                                                                                .put("initialValue",
+                                                                                                                new JsonArray())
+                                                                                                .put("in", new JsonObject()
+                                                                                                                .put("$concatArrays",
+                                                                                                                                new JsonArray()
+                                                                                                                                                .add("$$value")
+                                                                                                                                                .add("$$this")))))
+                                                                .put("as", "a")
+                                                                .put("cond", new JsonObject().put("$ne",
+                                                                                new JsonArray().add("$$a").add(null)))))
                                 .add(0));
         }
 
