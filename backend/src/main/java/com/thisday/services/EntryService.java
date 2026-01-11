@@ -16,16 +16,14 @@ import java.util.List;
 
 public class EntryService {
 
-    private static final Logger log =
-            LoggerFactory.getLogger(EntryService.class);
+    private static final Logger log = LoggerFactory.getLogger(EntryService.class);
 
     private final ImmichClient immichClient;
     private final EntryRepository entryRepository;
 
     public EntryService(
             ImmichClient immichClient,
-            EntryRepository entryRepository
-    ) {
+            EntryRepository entryRepository) {
         this.immichClient = immichClient;
         this.entryRepository = entryRepository;
     }
@@ -35,8 +33,7 @@ public class EntryService {
             String userId,
             String caption,
             List<MultipartForm> media,
-            Handler<AsyncResult<Void>> handler
-    ) {
+            Handler<AsyncResult<Void>> handler) {
         uploadAssets(media, new ArrayList<>(), ar -> {
             if (ar.failed()) {
                 handler.handle(Future.failedFuture(ar.cause()));
@@ -56,8 +53,7 @@ public class EntryService {
             entry.dayMonth = String.format(
                     "%02d-%02d",
                     todayIst.getMonthValue(),
-                    todayIst.getDayOfMonth()
-            );
+                    todayIst.getDayOfMonth());
 
             entry.createdAt = Instant.now(); // UTC
 
@@ -65,21 +61,18 @@ public class EntryService {
         });
     }
 
-
     public void createPastEntry(
             String userId,
             LocalDate date,
             String caption,
             List<MultipartForm> media,
-            Handler<AsyncResult<Void>> handler
-    ) {
+            Handler<AsyncResult<Void>> handler) {
+        ZoneId IST = ZoneId.of("Asia/Kolkata");
+        LocalDate todayIst = LocalDate.now(IST);
 
-        LocalDate today = LocalDate.now();
-
-        if (date.isAfter(today)) {
+        if (date.isAfter(todayIst)) {
             handler.handle(
-                    Future.failedFuture("Cannot create entry for a future date")
-            );
+                    Future.failedFuture("Cannot create entry for a future date"));
             return;
         }
 
@@ -97,14 +90,12 @@ public class EntryService {
             entry.dayMonth = String.format(
                     "%02d-%02d",
                     date.getMonthValue(),
-                    date.getDayOfMonth()
-            );
+                    date.getDayOfMonth());
             entry.createdAt = Instant.now();
 
             entryRepository.insert(entry, handler);
         });
     }
-
 
     // UPDATE
     public void updateEntry(
@@ -113,8 +104,7 @@ public class EntryService {
             String caption,
             List<MultipartForm> newMedia,
             List<String> removeAssetIds,
-            Handler<AsyncResult<Void>> handler
-    ) {
+            Handler<AsyncResult<Void>> handler) {
         uploadAssets(newMedia, new ArrayList<>(), ar -> {
             if (ar.failed()) {
                 handler.handle(Future.failedFuture(ar.cause()));
@@ -127,8 +117,7 @@ public class EntryService {
                     caption,
                     ar.result(),
                     removeAssetIds,
-                    handler
-            );
+                    handler);
         });
     }
 
@@ -136,8 +125,7 @@ public class EntryService {
     public void deleteEntry(
             String entryId,
             String userId,
-            Handler<AsyncResult<Void>> handler
-    ) {
+            Handler<AsyncResult<Void>> handler) {
         entryRepository.findById(entryId, userId, ar -> {
             if (ar.failed() || ar.result() == null) {
                 handler.handle(Future.failedFuture("Entry not found"));
@@ -156,8 +144,7 @@ public class EntryService {
     private void uploadAssets(
             List<MultipartForm> forms,
             List<String> assetIds,
-            Handler<AsyncResult<List<String>>> handler
-    ) {
+            Handler<AsyncResult<List<String>>> handler) {
         if (forms.isEmpty()) {
             handler.handle(Future.succeededFuture(assetIds));
             return;
