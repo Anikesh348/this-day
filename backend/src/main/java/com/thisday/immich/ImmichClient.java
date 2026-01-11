@@ -11,8 +11,7 @@ import io.vertx.core.http.HttpServerResponse;
 
 public class ImmichClient {
 
-    private static final Logger log =
-            LoggerFactory.getLogger(ImmichClient.class);
+    private static final Logger log = LoggerFactory.getLogger(ImmichClient.class);
 
     private final WebClient client;
     private final String baseUrl;
@@ -28,8 +27,7 @@ public class ImmichClient {
 
     public void uploadAsset(
             MultipartForm form,
-            Handler<AsyncResult<String>> handler
-    ) {
+            Handler<AsyncResult<String>> handler) {
         log.debug("Uploading asset to Immich");
         String url = baseUrl + "/api/assets";
         log.info("Immich upload URL = {}", url);
@@ -53,8 +51,7 @@ public class ImmichClient {
 
                     if (status < 200 || status >= 300) {
                         handler.handle(Future.failedFuture(
-                                "Immich upload failed: " + status + " " + rawBody
-                        ));
+                                "Immich upload failed: " + status + " " + rawBody));
                         return;
                     }
 
@@ -73,12 +70,10 @@ public class ImmichClient {
                 });
     }
 
-
     public void streamAsset(
             String assetId,
             String type,
-            HttpServerResponse response
-    ) {
+            HttpServerResponse response) {
         String endpoint;
 
         if ("full".equalsIgnoreCase(type)) {
@@ -96,8 +91,7 @@ public class ImmichClient {
                 .setStatusCode(200)
                 .putHeader(
                         "Cache-Control",
-                        "public, max-age=31536000, immutable"
-                );
+                        "public, max-age=31536000");
 
         client.getAbs(url)
                 .putHeader("x-api-key", apiKey)
