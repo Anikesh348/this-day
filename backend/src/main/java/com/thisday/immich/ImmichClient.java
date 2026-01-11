@@ -85,13 +85,22 @@ public class ImmichClient {
         String url = baseUrl + endpoint;
 
         log.info("Streaming Immich asset url={} type={}", url, type);
+        String normalizedType = type == null ? "" : type.toLowerCase();
+
+        if ("thumbnail".equals(normalizedType)) {
+            response
+                    .putHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+                    .putHeader("Pragma", "no-cache")
+                    .putHeader("Expires", "0")
+                    .putHeader("Content-Encoding", "identity");
+        } else {
+            response
+                    .putHeader("Cache-Control", "public, max-age=31536000");
+        }
 
         response
                 .setChunked(true)
-                .setStatusCode(200)
-                .putHeader(
-                        "Cache-Control",
-                        "public, max-age=31536000");
+                .setStatusCode(200);
 
         client.getAbs(url)
                 .putHeader("x-api-key", apiKey)
