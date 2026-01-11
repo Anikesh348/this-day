@@ -27,14 +27,10 @@ export default function AddEntryScreen() {
     from?: "today" | "calendar";
   }>();
 
-  /** Forced backfill */
   const forcedBackfill = mode === "backfill" && !!date;
 
-  /** State */
   const [entryMode, setEntryMode] = useState<"today" | "past">("today");
-
-  // ✅ FIX: store past date as YYYY-MM-DD string (NOT Date)
-  const [pastDateString, setPastDateString] = useState<string>(
+  const [pastDateString, setPastDateString] = useState(
     date ?? new Date().toISOString().slice(0, 10)
   );
 
@@ -45,9 +41,6 @@ export default function AddEntryScreen() {
 
   const isBackfill = forcedBackfill || entryMode === "past";
 
-  /**
-   * ✅ RESET STATE on focus
-   */
   useFocusEffect(
     useCallback(() => {
       setCaption("");
@@ -59,43 +52,28 @@ export default function AddEntryScreen() {
     }, [date])
   );
 
-  /** 🔙 Back navigation */
   const handleBack = () => {
     if (from === "today") router.replace("/today");
     else if (from === "calendar") router.replace("/calendar");
-    else if (router.canGoBack()) router.back();
-    else router.replace("/today");
+    else router.back();
   };
 
-  /** 🖼 Gallery */
   const addFromGallery = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
       allowsMultipleSelection: true,
       quality: 0.9,
     });
-
-    if (!res.canceled) {
-      setMedia((prev) => [...prev, ...res.assets]);
-    }
+    if (!res.canceled) setMedia((p) => [...p, ...res.assets]);
   };
 
-  /** 📸 Camera (ALWAYS enabled) */
   const captureFromCamera = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) return;
 
-    const res = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
-      quality: 0.9,
-    });
-
-    if (!res.canceled) {
-      setMedia((prev) => [...prev, ...res.assets]);
-    }
+    const res = await ImagePicker.launchCameraAsync({ quality: 0.9 });
+    if (!res.canceled) setMedia((p) => [...p, ...res.assets]);
   };
 
-  /** 💾 Submit */
   const submit = async () => {
     if (submitting) return;
     setSubmitting(true);
@@ -108,7 +86,6 @@ export default function AddEntryScreen() {
       }));
 
       if (isBackfill) {
-        // ✅ FIX: send YYYY-MM-DD directly (NO ISO conversion)
         const d = forcedBackfill ? date! : pastDateString;
         await createBackfilledEntry(d, caption, files);
       } else {
@@ -135,143 +112,140 @@ export default function AddEntryScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.card}>
-          <Title>{isBackfill ? "Add Memory" : "Add Entry"}</Title>
+        <Title>New Entry</Title>
+        <Muted style={styles.subtitle}>
+          Write freely. This is just for you.
+        </Muted>
 
-          <Muted>
-            {forcedBackfill
-              ? `For ${new Date(`${date}T00:00:00`).toDateString()}`
-              : "Capture this moment"}
-          </Muted>
-
-          {/* Toggle */}
-          {!forcedBackfill && (
-            <View style={styles.toggle}>
-              {["today", "past"].map((v) => (
-                <Pressable
-                  key={v}
-                  onPress={() => setEntryMode(v as any)}
-                  style={[
-                    styles.toggleBtn,
-                    entryMode === v && styles.toggleActive,
-                  ]}
+        {!forcedBackfill && (
+          <View style={styles.toggle}>
+            {["today", "past"].map((v) => (
+              <Pressable
+                key={v}
+                onPress={() => setEntryMode(v as any)}
+                style={[
+                  styles.toggleBtn,
+                  entryMode === v && styles.toggleActive,
+                ]}
+              >
+                <Body
+                  style={{
+                    color:
+                      entryMode === v
+                        ? Colors.dark.textPrimary
+                        : Colors.dark.textMuted,
+                  }}
                 >
-                  <Body>{v === "today" ? "Today" : "Past"}</Body>
-                </Pressable>
-              ))}
-            </View>
-          )}
-
-          {/* 📅 Past date selector */}
-          {!forcedBackfill && entryMode === "past" && (
-            <Pressable
-              style={styles.dateRow}
-              onPress={() => setShowCalendar(true)}
-            >
-              <Ionicons
-                name="calendar-outline"
-                size={18}
-                color={Colors.dark.textMuted}
-              />
-              <Body>
-                {new Date(`${pastDateString}T00:00:00`).toLocaleDateString(
-                  undefined,
-                  {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  }
-                )}
-              </Body>
-            </Pressable>
-          )}
-
-          {/* Caption */}
-          <TextInput
-            value={caption}
-            onChangeText={setCaption}
-            placeholder="Write something…"
-            placeholderTextColor={Colors.dark.textMuted}
-            multiline
-            style={styles.input}
-          />
-
-          {/* Media preview */}
-          {media.length > 0 && (
-            <View style={styles.grid}>
-              {media.map((m, i) => (
-                <Image key={i} source={{ uri: m.uri }} style={styles.image} />
-              ))}
-            </View>
-          )}
-
-          {/* Actions */}
-          <View style={styles.actions}>
-            <Pressable style={styles.actionBtn} onPress={addFromGallery}>
-              <Ionicons
-                name="images-outline"
-                size={20}
-                color={Colors.dark.accent}
-              />
-              <Body>Gallery</Body>
-            </Pressable>
-
-            <Pressable style={styles.actionBtn} onPress={captureFromCamera}>
-              <Ionicons
-                name="camera-outline"
-                size={20}
-                color={Colors.dark.accent}
-              />
-              <Body>Camera</Body>
-            </Pressable>
+                  {v === "today" ? "Today" : "Past"}
+                </Body>
+              </Pressable>
+            ))}
           </View>
+        )}
 
-          {/* Save */}
+        {!forcedBackfill && entryMode === "past" && (
           <Pressable
-            style={[styles.submitButton, submitting && { opacity: 0.6 }]}
-            onPress={submit}
+            style={styles.dateRow}
+            onPress={() => setShowCalendar(true)}
           >
-            {submitting ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <Body>Save</Body>
-            )}
+            <Ionicons
+              name="calendar-outline"
+              size={18}
+              color={Colors.dark.textMuted}
+            />
+            <Body>
+              {new Date(`${pastDateString}T00:00:00`).toLocaleDateString(
+                undefined,
+                {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                }
+              )}
+            </Body>
+          </Pressable>
+        )}
+
+        {/* Writing */}
+        <TextInput
+          value={caption}
+          onChangeText={setCaption}
+          placeholder="What happened today?"
+          placeholderTextColor={Colors.dark.textMuted}
+          multiline
+          style={styles.editor}
+        />
+
+        {/* Media */}
+        {media.length > 0 && (
+          <View style={styles.mediaStrip}>
+            {media.map((m, i) => (
+              <Image
+                key={i}
+                source={{ uri: m.uri }}
+                style={styles.mediaImage}
+              />
+            ))}
+          </View>
+        )}
+
+        {/* Actions */}
+        <View style={styles.actionRow}>
+          <Pressable style={styles.iconBtn} onPress={addFromGallery}>
+            <Ionicons name="images-outline" size={22} color="#8AA4FF" />
+          </Pressable>
+
+          <Pressable style={styles.iconBtn} onPress={captureFromCamera}>
+            <Ionicons name="camera-outline" size={22} color="#8AA4FF" />
           </Pressable>
         </View>
+
+        {/* Save */}
+        <Pressable
+          style={[styles.saveBtn, submitting && { opacity: 0.6 }]}
+          onPress={submit}
+        >
+          {submitting ? (
+            <ActivityIndicator color="white" />
+          ) : (
+            <Body style={{ color: "white" }}>Save Entry</Body>
+          )}
+        </Pressable>
       </ScrollView>
 
-      {/* 📅 Calendar Modal */}
+      {/* Modern Bottom-Sheet Calendar */}
       <Modal visible={showCalendar} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+        <View style={styles.sheetOverlay}>
+          <View style={styles.sheet}>
+            <View style={styles.sheetHeader}>
+              <Muted>Select date</Muted>
+              <Pressable onPress={() => setShowCalendar(false)}>
+                <Ionicons
+                  name="close"
+                  size={22}
+                  color={Colors.dark.textMuted}
+                />
+              </Pressable>
+            </View>
+
             <Calendar
               current={pastDateString}
               maxDate={new Date().toISOString().slice(0, 10)}
-              onDayPress={(day) => {
-                // ✅ FIX: use dateString directly
-                setPastDateString(day.dateString);
+              onDayPress={(d) => {
+                setPastDateString(d.dateString);
                 setShowCalendar(false);
               }}
               theme={{
                 calendarBackground: Colors.dark.surface,
                 dayTextColor: Colors.dark.textPrimary,
                 monthTextColor: Colors.dark.textPrimary,
-                selectedDayBackgroundColor: Colors.dark.accent,
-                todayTextColor: Colors.dark.accent,
+                selectedDayBackgroundColor: "#6C8CFF",
+                todayTextColor: "#6C8CFF",
                 arrowColor: Colors.dark.textPrimary,
               }}
-              markedDates={{
-                [pastDateString]: { selected: true },
-              }}
+              markedDates={{ [pastDateString]: { selected: true } }}
             />
-
-            <Pressable
-              style={styles.closeBtn}
-              onPress={() => setShowCalendar(false)}
-            >
-              <Body>Close</Body>
-            </Pressable>
           </View>
         </View>
       </Modal>
@@ -281,24 +255,23 @@ export default function AddEntryScreen() {
 
 const styles = StyleSheet.create({
   topBar: { paddingHorizontal: 16, paddingTop: 8 },
-  scroll: { paddingVertical: 24, alignItems: "center" },
 
-  card: {
-    width: "100%",
-    maxWidth: 420,
-    backgroundColor: Colors.dark.surface,
-    borderRadius: 28,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
+  scroll: {
+    padding: 24,
+    paddingBottom: 140,
+  },
+
+  subtitle: {
+    marginTop: 6,
+    marginBottom: 20,
   },
 
   toggle: {
-    marginTop: 16,
     flexDirection: "row",
-    backgroundColor: Colors.dark.surfaceAlt,
+    backgroundColor: "#1F2328",
     borderRadius: 20,
     padding: 4,
+    marginBottom: 16,
   },
 
   toggleBtn: {
@@ -309,74 +282,82 @@ const styles = StyleSheet.create({
   },
 
   toggleActive: {
-    backgroundColor: Colors.dark.accent,
+    backgroundColor: "#2C3440",
   },
 
   dateRow: {
-    marginTop: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
     padding: 14,
     borderRadius: 16,
-    backgroundColor: Colors.dark.surfaceAlt,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
+    backgroundColor: "#1F2328",
+    marginBottom: 16,
   },
 
-  input: {
-    marginTop: 20,
-    minHeight: 120,
-    borderRadius: 18,
-    padding: 16,
-    backgroundColor: Colors.dark.surfaceAlt,
+  editor: {
+    minHeight: 180,
+    padding: 18,
+    borderRadius: 22,
+    backgroundColor: "#1F2328",
     color: Colors.dark.textPrimary,
-    fontSize: 16,
+    fontSize: 18,
+    lineHeight: 26,
   },
 
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 16 },
-  image: { width: "48%", height: 120, borderRadius: 14 },
-
-  actions: { marginTop: 20, flexDirection: "row", gap: 12 },
-
-  actionBtn: {
-    flex: 1,
+  mediaStrip: {
+    marginTop: 16,
     flexDirection: "row",
-    gap: 10,
+    flexWrap: "wrap",
+    gap: 12,
+  },
+
+  mediaImage: {
+    width: "48%",
+    height: 160,
+    borderRadius: 18,
+  },
+
+  actionRow: {
+    marginTop: 20,
+    flexDirection: "row",
+    gap: 14,
+  },
+
+  iconBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#1F2328",
     alignItems: "center",
     justifyContent: "center",
-    padding: 14,
-    borderRadius: 18,
-    backgroundColor: Colors.dark.surfaceAlt,
   },
 
-  submitButton: {
+  saveBtn: {
     marginTop: 28,
     paddingVertical: 16,
-    borderRadius: 22,
-    backgroundColor: Colors.dark.accent,
+    borderRadius: 28,
+    backgroundColor: "#6C8CFF",
     alignItems: "center",
   },
 
-  modalOverlay: {
+  sheetOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,1)",
-    justifyContent: "center",
+    justifyContent: "flex-end",
+  },
+
+  sheet: {
+    backgroundColor: Colors.dark.surface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     padding: 20,
   },
 
-  modalCard: {
-    backgroundColor: Colors.dark.surface,
-    borderRadius: 22,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.5,
-    shadowRadius: 30,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 20,
-  },
-
-  closeBtn: {
-    marginTop: 12,
-    padding: 12,
+  sheetHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: 12,
   },
 });

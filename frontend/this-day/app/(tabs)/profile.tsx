@@ -4,7 +4,8 @@ import { clearToken } from "@/services/auth";
 import { Colors } from "@/theme/colors";
 import { useAuth, useUser } from "@clerk/clerk-expo";
 import { useRouter } from "expo-router";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { Image, Pressable, StyleSheet, View } from "react-native";
 
 export default function ProfileScreen() {
   const { user } = useUser();
@@ -19,34 +20,123 @@ export default function ProfileScreen() {
 
   return (
     <Screen>
-      <Title>Profile</Title>
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Title>Profile</Title>
+          <Muted style={styles.subtitle}>Your account & preferences</Muted>
+        </View>
 
-      <View style={styles.card}>
-        <Body>{user?.fullName}</Body>
-        <Muted>{user?.primaryEmailAddress?.emailAddress}</Muted>
+        {/* Identity card */}
+        <View style={styles.card}>
+          {/* Avatar */}
+          <View style={styles.avatarWrapper}>
+            {user?.imageUrl ? (
+              <Image source={{ uri: user.imageUrl }} style={styles.avatar} />
+            ) : (
+              <View style={styles.avatarFallback}>
+                <Ionicons name="person-outline" size={28} color="white" />
+              </View>
+            )}
+          </View>
+
+          <View style={styles.identity}>
+            <Body style={styles.name}>{user?.fullName ?? "Anonymous"}</Body>
+            <Muted style={styles.email}>
+              {user?.primaryEmailAddress?.emailAddress}
+            </Muted>
+          </View>
+        </View>
+
+        {/* Actions */}
+        <View style={styles.actions}>
+          <Pressable style={styles.logoutBtn} onPress={logout}>
+            <Ionicons name="log-out-outline" size={18} color="#FF6B6B" />
+            <Body style={styles.logoutText}>Sign Out</Body>
+          </Pressable>
+        </View>
       </View>
-
-      <Pressable style={styles.logout} onPress={logout}>
-        <Muted>Sign Out</Muted>
-      </Pressable>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    marginTop: 24,
-    padding: 18,
-    borderRadius: 20,
-    backgroundColor: Colors.dark.surface,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
+  container: {
+    paddingTop: 32,
+    paddingHorizontal: 16,
   },
-  logout: {
-    marginTop: 40,
-    paddingVertical: 14,
-    borderRadius: 20,
+
+  header: {
     alignItems: "center",
-    backgroundColor: Colors.dark.surfaceAlt,
+    marginBottom: 32,
+  },
+
+  subtitle: {
+    marginTop: 4,
+    opacity: 0.75,
+  },
+
+  card: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1C1F24",
+    borderRadius: 26,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+
+  avatarWrapper: {
+    marginRight: 14,
+  },
+
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#111",
+  },
+
+  avatarFallback: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.dark.accent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  identity: {
+    flex: 1,
+  },
+
+  name: {
+    fontSize: 16,
+    marginBottom: 2,
+  },
+
+  email: {
+    fontSize: 13,
+    opacity: 0.8,
+  },
+
+  actions: {
+    marginTop: 40,
+  },
+
+  logoutBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,107,107,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,107,107,0.25)",
+  },
+
+  logoutText: {
+    color: "#FF6B6B",
   },
 });

@@ -37,9 +37,14 @@ export default function CalendarScreen() {
   const [entries, setEntries] = useState<Record<string, any>>({});
   const loadedMonths = useRef<Set<string>>(new Set());
 
+  const monthLoadTimeout = useRef<NodeJS.Timeout | null>(null);
+
   const todayString = getTodayISTString();
   const currentMonth = todayString.substring(0, 7) + "-01";
 
+  /**
+   * Load a month safely without causing scroll jumps
+   */
   const loadMonth = async (year: number, month: number) => {
     const key = `${year}-${month}`;
     if (loadedMonths.current.has(key)) return;
@@ -51,7 +56,7 @@ export default function CalendarScreen() {
       const map: Record<string, any> = {};
 
       res.data.forEach((d: any) => {
-        map[d.date] = d; // YYYY-MM-DD
+        map[d.date] = d;
       });
 
       setEntries((prev) => ({ ...prev, ...map }));
@@ -61,19 +66,103 @@ export default function CalendarScreen() {
   };
 
   /**
-   * ✅ CRITICAL FIX
-   * Re-run whenever Calendar screen becomes active
+   * 🔥 Reset calendar state when screen regains focus
    */
   useFocusEffect(
     useCallback(() => {
-      // 🔥 Invalidate cache
       loadedMonths.current.clear();
       setEntries({});
 
-      // Reload current month
       const [y, m] = todayString.split("-").map(Number);
       loadMonth(y, m);
+
+      return () => {
+        if (monthLoadTimeout.current) {
+          clearTimeout(monthLoadTimeout.current);
+        }
+      };
     }, [todayString])
+  );
+
+  /**
+   * ✅ Memoized day renderer (prevents re-render storms)
+   */
+  const renderDay = useCallback(
+    ({ date, state }: any) => {
+      const entry = entries[date.dateString];
+
+      const hasEntry = !!entry?.immichAssetId;
+      const assetId = entry?.immichAssetId;
+
+      const isToday = date.dateString === todayString;
+      const isFuture = date.dateString > todayString;
+      const isDisabled = state === "disabled";
+
+      return (
+        <Pressable
+          onPress={() => {
+            if (isFuture) return;
+
+            router.push({
+              pathname: "day/[date]",
+              params: {
+                date: date.dateString,
+                from: "calendar",
+              },
+            });
+          }}
+          style={({ pressed }) => [
+            styles.dayCell,
+            pressed && !isFuture && { opacity: 0.7 },
+          ]}
+        >
+          <View
+            style={[
+              styles.visualContainer,
+              isToday && styles.todayOutline,
+              isFuture && styles.futureDay,
+              isDisabled && { opacity: 0.1 },
+            ]}
+          >
+            {hasEntry ? (
+              <Image
+                source={{
+                  uri: `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${assetId}?type=thumbnail`,
+                }}
+                style={styles.dayImage}
+              />
+            ) : (
+              !isFuture &&
+              !isToday &&
+              !isDisabled && (
+                <View style={styles.crossContainer}>
+                  <View style={styles.crossLine} />
+                  <View
+                    style={[
+                      styles.crossLine,
+                      { transform: [{ rotate: "-45deg" }] },
+                    ]}
+                  />
+                </View>
+              )
+            )}
+
+            <View
+              style={[
+                styles.dateBadge,
+                isToday && styles.todayBadge,
+                isFuture && { backgroundColor: "transparent" },
+              ]}
+            >
+              <Text style={[styles.dateText, isFuture && { color: "#444" }]}>
+                {date.day}
+              </Text>
+            </View>
+          </View>
+        </Pressable>
+      );
+    },
+    [entries, todayString, router]
   );
 
   return (
@@ -84,9 +173,16 @@ export default function CalendarScreen() {
         futureScrollRange={0}
         showScrollIndicator={false}
         calendarWidth={SCREEN_WIDTH}
+        calendarHeight={SCREEN_WIDTH * 1.15} // 🔒 layout stability
         contentContainerStyle={{ paddingBottom: 100 }}
         onVisibleMonthsChange={(months) => {
-          months.forEach((m) => loadMonth(m.year, m.month));
+          if (monthLoadTimeout.current) {
+            clearTimeout(monthLoadTimeout.current);
+          }
+
+          monthLoadTimeout.current = setTimeout(() => {
+            months.forEach((m) => loadMonth(m.year, m.month));
+          }, 120); // 🧠 debounce prevents jump
         }}
         theme={
           {
@@ -112,82 +208,7 @@ export default function CalendarScreen() {
             },
           } as any
         }
-        dayComponent={({ date, state }: any) => {
-          const entry = entries[date.dateString];
-
-          const hasEntry = !!entry?.immichAssetId;
-          const assetId = entry?.immichAssetId;
-
-          const isToday = date.dateString === todayString;
-          const isFuture = date.dateString > todayString;
-          const isDisabled = state === "disabled";
-
-          return (
-            <Pressable
-              onPress={() => {
-                if (isFuture) return;
-
-                router.push({
-                  pathname: "day/[date]",
-                  params: {
-                    date: date.dateString,
-                    from: "calendar",
-                  },
-                });
-              }}
-              style={({ pressed }) => [
-                styles.dayCell,
-                pressed && !isFuture && { opacity: 0.7 },
-              ]}
-            >
-              <View
-                style={[
-                  styles.visualContainer,
-                  isToday && styles.todayOutline,
-                  isFuture && styles.futureDay,
-                  isDisabled && { opacity: 0.1 },
-                ]}
-              >
-                {hasEntry ? (
-                  <Image
-                    source={{
-                      uri: `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${assetId}?type=thumbnail`,
-                    }}
-                    style={styles.dayImage}
-                  />
-                ) : (
-                  !isFuture &&
-                  !isToday &&
-                  !isDisabled && (
-                    <View style={styles.crossContainer}>
-                      <View style={styles.crossLine} />
-                      <View
-                        style={[
-                          styles.crossLine,
-                          { transform: [{ rotate: "-45deg" }] },
-                        ]}
-                      />
-                    </View>
-                  )
-                )}
-
-                <View
-                  style={[
-                    styles.dateBadge,
-                    isToday && styles.todayBadge,
-                    isFuture && { backgroundColor: "transparent" },
-                  ]}
-                >
-                  <Text
-                    style={[styles.dateText, isFuture && { color: "#444" }]}
-                  >
-                    {date.day}
-                  </Text>
-                </View>
-              </View>
-            </Pressable>
-          );
-        }}
+        dayComponent={renderDay}
       />
     </View>
   );

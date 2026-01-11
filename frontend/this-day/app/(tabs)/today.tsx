@@ -15,7 +15,7 @@ import { Colors } from "@/theme/colors";
 interface Entry {
   _id: string;
   caption: string;
-  date: string;
+  date: string; // YYYY-MM-DD
   immichAssetIds?: string[];
 }
 
@@ -26,9 +26,6 @@ export default function TodayScreen() {
   const [previous, setPrevious] = useState<Entry | null>(null);
   const [loading, setLoading] = useState(true);
 
-  /**
-   * ✅ Fetch logic (reusable)
-   */
   const loadData = async () => {
     setLoading(true);
 
@@ -63,10 +60,6 @@ export default function TodayScreen() {
     setLoading(false);
   };
 
-  /**
-   * ✅ CRITICAL FIX:
-   * Runs every time the screen becomes active
-   */
   useFocusEffect(
     useCallback(() => {
       loadData();
@@ -83,31 +76,60 @@ export default function TodayScreen() {
     });
   };
 
-  const renderCard = (entry: Entry, label: string) => {
+  const formatDate = (date: string) => {
+    const [y, m, d] = date.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const renderCard = (entry: Entry, label: string, showDateHint = false) => {
     const assetId = entry.immichAssetIds?.[0];
+    const hasCaption = entry.caption && entry.caption.trim().length > 0;
 
     return (
       <Pressable style={styles.card} onPress={() => openDay(entry.date)}>
-        <Muted style={styles.cardLabel}>{label}</Muted>
+        {/* Card header */}
+        <View style={styles.cardHeader}>
+          <Muted style={styles.cardLabel}>{label}</Muted>
 
-        {assetId ? (
+          {showDateHint && (
+            <Muted style={styles.dateHint}>{formatDate(entry.date)}</Muted>
+          )}
+        </View>
+
+        {/* Image */}
+        {assetId && (
           <Image
             source={{
               uri: `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${assetId}?type=thumbnail`,
             }}
             style={styles.image}
           />
-        ) : (
-          <Body numberOfLines={5}>{entry.caption}</Body>
         )}
+
+        {/* Caption preview */}
+        {hasCaption && (
+          <Body
+            numberOfLines={2}
+            style={[styles.captionPreview, assetId && { marginTop: 10 }]}
+          >
+            {entry.caption}
+          </Body>
+        )}
+
+        {/* No image fallback */}
+        {!assetId && !hasCaption && <Muted>No details added</Muted>}
       </Pressable>
     );
   };
 
   const renderEmpty = (label: string) => (
-    <View style={styles.card}>
+    <View style={[styles.card, styles.emptyCard]}>
       <Muted style={styles.cardLabel}>{label}</Muted>
-      <Muted>No entries found</Muted>
+      <Muted>No entries yet</Muted>
     </View>
   );
 
@@ -117,8 +139,11 @@ export default function TodayScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        <Title>This Day</Title>
-        <Muted>Private. Calm. Timeless.</Muted>
+        {/* Header */}
+        <View style={styles.header}>
+          <Title>This Day</Title>
+          <Muted style={styles.subtitle}>Private. Calm. Timeless.</Muted>
+        </View>
 
         <View style={styles.stack}>
           {loading && <Muted>Loading…</Muted>}
@@ -128,16 +153,16 @@ export default function TodayScreen() {
               {today ? renderCard(today, "Today") : renderEmpty("Today")}
 
               {previous
-                ? renderCard(previous, "From Your Past")
+                ? renderCard(previous, "From Your Past", true)
                 : renderEmpty("From Your Past")}
             </>
           )}
         </View>
       </ScrollView>
 
-      {/* Add Entry */}
+      {/* Floating Add Button */}
       <Pressable
-        style={styles.fab}
+        style={styles.fabOuter}
         onPress={() =>
           router.push({
             pathname: "/add",
@@ -145,7 +170,9 @@ export default function TodayScreen() {
           })
         }
       >
-        <Ionicons name="add" size={28} color="white" />
+        <View style={styles.fabInner}>
+          <Ionicons name="add" size={28} color="white" />
+        </View>
       </Pressable>
     </Screen>
   );
@@ -153,50 +180,97 @@ export default function TodayScreen() {
 
 const styles = StyleSheet.create({
   scroll: {
-    paddingVertical: 32,
-    paddingHorizontal: 8,
+    paddingTop: 40,
+    paddingBottom: 120,
+    paddingHorizontal: 16,
+  },
+
+  header: {
     alignItems: "center",
+    marginBottom: 28,
+  },
+
+  subtitle: {
+    marginTop: 4,
+    opacity: 0.85,
   },
 
   stack: {
-    marginTop: 24,
     width: "100%",
     maxWidth: 420,
-    gap: 20,
+    alignSelf: "center",
+    gap: 22,
   },
 
   card: {
-    backgroundColor: Colors.dark.surface,
-    borderRadius: 24,
-    padding: 20,
+    backgroundColor: "#1C1F24",
+    borderRadius: 26,
+    padding: 18,
     borderWidth: 1,
-    borderColor: Colors.dark.border,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+
+  emptyCard: {
+    alignItems: "center",
+    paddingVertical: 32,
+  },
+
+  cardHeader: {
+    marginBottom: 12,
   },
 
   cardLabel: {
-    marginBottom: 12,
+    fontSize: 13,
+    letterSpacing: 0.4,
+  },
+
+  dateHint: {
+    marginTop: 2,
+    fontSize: 12,
+    opacity: 0.7,
   },
 
   image: {
     width: "100%",
-    height: 220,
-    borderRadius: 16,
-    backgroundColor: "#222",
+    height: 230,
+    borderRadius: 18,
+    backgroundColor: "#111",
   },
 
-  fab: {
+  captionPreview: {
+    fontSize: 15,
+    lineHeight: 22,
+    opacity: 0.9,
+  },
+
+  /* ===== FAB ===== */
+
+  fabOuter: {
     position: "absolute",
     right: 20,
-    bottom: 96,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: Colors.dark.accent,
+    bottom: 64,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "rgba(108,140,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#6C8CFF",
+    shadowOpacity: 0.5,
+    shadowRadius: 32,
+    elevation: 20,
+  },
+
+  fabInner: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#6C8CFF",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
     shadowOpacity: 0.35,
-    shadowRadius: 20,
+    shadowRadius: 12,
     elevation: 10,
   },
 });

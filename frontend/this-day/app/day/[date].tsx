@@ -3,19 +3,25 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
-  Platform,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   View,
+  Dimensions,
 } from "react-native";
 
 import { Screen } from "@/components/Screen";
-import { Body, Muted } from "@/components/Text";
+import { Body, Muted, Title } from "@/components/Text";
 import { deleteEntry, getDayEntries } from "@/services/entries";
 import { Colors } from "@/theme/colors";
+
+const SCREEN_WIDTH = Dimensions.get("window").width;
+const GRID_GAP = 8;
+const GRID_COLUMNS = 3;
+const GRID_ITEM_SIZE =
+  (SCREEN_WIDTH - 16 * 2 - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
 
 interface Entry {
   _id: string;
@@ -33,11 +39,11 @@ export default function DayViewScreen() {
 
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
 
   useEffect(() => {
     if (!date) return;
-
     const [y, m, d] = date.split("-").map(Number);
 
     getDayEntries(y, m, d)
@@ -46,59 +52,8 @@ export default function DayViewScreen() {
   }, [date]);
 
   const handleBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-      return;
-    }
-
-    if (from === "calendar") {
-      router.replace("/calendar");
-    } else {
-      router.replace("/today");
-    }
-  };
-
-  const handleAdd = () => {
-    router.push({
-      pathname: "/add",
-      params: {
-        mode: "backfill",
-        date,
-      },
-    });
-  };
-
-  const performDelete = async (entryId: string) => {
-    try {
-      setDeletingId(entryId);
-      await deleteEntry(entryId);
-      setEntries((prev) => prev.filter((e) => e._id !== entryId));
-    } catch (err) {
-      Alert.alert(
-        "Delete failed",
-        "Could not delete the entry. Please try again."
-      );
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
-  const confirmDelete = (entryId: string) => {
-    if (Platform.OS === "web") {
-      if (window.confirm("This entry will be permanently deleted.")) {
-        performDelete(entryId);
-      }
-      return;
-    }
-
-    Alert.alert("Delete Entry", "This entry will be permanently deleted.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => performDelete(entryId),
-      },
-    ]);
+    if (router.canGoBack()) router.back();
+    else router.replace(from === "calendar" ? "/calendar" : "/today");
   };
 
   if (loading) {
@@ -111,157 +66,302 @@ export default function DayViewScreen() {
 
   return (
     <Screen>
-      {/* Top Bar */}
-      <View style={styles.topBar}>
-        <Pressable onPress={handleBack}>
-          <Ionicons
-            name="chevron-back"
-            size={26}
-            color={Colors.dark.textPrimary}
-          />
-        </Pressable>
-
-        <Muted>
-          {new Date(date!).toLocaleDateString(undefined, {
-            weekday: "long",
-            month: "long",
-            day: "numeric",
-            year: "numeric",
-          })}
-        </Muted>
-      </View>
-
       <ScrollView
-        showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
       >
-        {entries.map((entry) => (
-          <View key={entry._id} style={styles.entryCard}>
-            {/* Header row */}
-            <View style={styles.entryHeader}>
-              <Muted style={styles.time}>
-                {new Date(entry.createdAt).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </Muted>
+        {/* Header */}
+        <View style={styles.header}>
+          <Pressable onPress={handleBack} style={styles.backBtn}>
+            <Ionicons
+              name="chevron-back"
+              size={26}
+              color={Colors.dark.textPrimary}
+            />
+          </Pressable>
 
-              <Pressable
-                onPress={() => confirmDelete(entry._id)}
-                disabled={deletingId === entry._id}
-                hitSlop={10}
-              >
-                <Ionicons
-                  name="trash-outline"
-                  size={18}
-                  color={
-                    deletingId === entry._id
-                      ? Colors.dark.textMuted
-                      : Colors.dark.textPrimary
-                  }
-                />
-              </Pressable>
+          <Title style={styles.title}>
+            {new Date(date!).toLocaleDateString(undefined, {
+              weekday: "long",
+            })}
+          </Title>
+
+          <Muted style={styles.subtitle}>
+            {new Date(date!).toLocaleDateString(undefined, {
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </Muted>
+        </View>
+
+        <View style={styles.stack}>
+          {entries.length === 0 && (
+            <View style={[styles.card, styles.emptyCard]}>
+              <Muted>No entries for this day</Muted>
             </View>
+          )}
 
-            {/* Caption */}
-            {entry.caption && (
-              <Body style={styles.caption}>{entry.caption}</Body>
-            )}
+          {entries.map((entry) => (
+            <View key={entry._id} style={styles.card}>
+              {/* Card header */}
+              <View style={styles.cardHeader}>
+                <Muted style={styles.time}>
+                  {new Date(entry.createdAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </Muted>
 
-            {/* Media */}
-            {entry.immichAssetIds?.filter(Boolean).length > 0 && (
-              <View style={styles.mediaGrid}>
-                {entry.immichAssetIds.filter(Boolean).map((assetId) => (
-                  <Image
-                    key={assetId!}
-                    source={{
-                      uri: `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${assetId}?type=thumbnail`,
-                    }}
-                    style={styles.image}
+                <Pressable
+                  onPress={() => {
+                    setDeleteTargetId(entry._id);
+                    setDeleteModalVisible(true);
+                  }}
+                >
+                  <Ionicons
+                    name="trash-outline"
+                    size={18}
+                    color={Colors.dark.textPrimary}
                   />
-                ))}
+                </Pressable>
               </View>
-            )}
-          </View>
-        ))}
 
-        {entries.length === 0 && (
-          <Muted style={{ marginTop: 40 }}>No entries for this day.</Muted>
-        )}
+              {/* Caption */}
+              {entry.caption && (
+                <Body style={styles.caption}>{entry.caption}</Body>
+              )}
+
+              {/* Media grid */}
+              {entry.immichAssetIds?.filter(Boolean).length > 0 && (
+                <View style={styles.mediaGrid}>
+                  {entry.immichAssetIds.filter(Boolean).map((assetId) => (
+                    <Pressable
+                      key={assetId!}
+                      onPress={() =>
+                        router.push({
+                          pathname: "media/[assetId]",
+                          params: { assetId },
+                        })
+                      }
+                    >
+                      <Image
+                        source={{
+                          uri: `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${assetId}?type=thumbnail`,
+                        }}
+                        style={styles.thumbnail}
+                      />
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </View>
+          ))}
+        </View>
       </ScrollView>
 
-      {/* Add Entry FAB */}
-      <Pressable style={styles.fab} onPress={handleAdd}>
-        <Ionicons name="add" size={28} color="white" />
+      {/* Delete Modal */}
+      <Modal visible={deleteModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Title style={styles.modalTitle}>Delete entry?</Title>
+
+            <Muted style={styles.modalSubtitle}>
+              This action cannot be undone.
+            </Muted>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.cancelBtn}
+                onPress={() => setDeleteModalVisible(false)}
+              >
+                <Body>Cancel</Body>
+              </Pressable>
+
+              <Pressable
+                style={styles.deleteBtn}
+                onPress={async () => {
+                  if (!deleteTargetId) return;
+                  await deleteEntry(deleteTargetId);
+                  setEntries((p) => p.filter((e) => e._id !== deleteTargetId));
+                  setDeleteModalVisible(false);
+                }}
+              >
+                <Body style={{ color: "white" }}>Delete</Body>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* FAB */}
+      <Pressable
+        style={styles.fabOuter}
+        onPress={() =>
+          router.push({
+            pathname: "/add",
+            params: { mode: "backfill", date },
+          })
+        }
+      >
+        <View style={styles.fabInner}>
+          <Ionicons name="add" size={28} color="white" />
+        </View>
       </Pressable>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  topBar: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
-    gap: 8,
-  },
-
   scroll: {
+    paddingTop: 36,
     paddingBottom: 120,
+    paddingHorizontal: 16,
   },
 
-  entryCard: {
-    backgroundColor: Colors.dark.surface,
-    borderRadius: 24,
-    padding: 16,
-    marginBottom: 20,
+  header: {
+    alignItems: "center",
+    marginBottom: 28,
+  },
+
+  backBtn: {
+    position: "absolute",
+    left: 0,
+    top: 2,
+  },
+
+  title: {
+    marginBottom: 2,
+  },
+
+  subtitle: {
+    opacity: 0.75,
+  },
+
+  stack: {
+    width: "100%",
+    maxWidth: 420,
+    alignSelf: "center",
+    gap: 22,
+  },
+
+  card: {
+    backgroundColor: "#1C1F24",
+    borderRadius: 26,
+    padding: 18,
     borderWidth: 1,
-    borderColor: Colors.dark.border,
+    borderColor: "rgba(255,255,255,0.06)",
   },
 
-  entryHeader: {
+  emptyCard: {
+    alignItems: "center",
+    paddingVertical: 32,
+  },
+
+  cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
     marginBottom: 10,
   },
 
+  time: {
+    fontSize: 12,
+    opacity: 0.75,
+  },
+
   caption: {
-    fontSize: 17,
-    lineHeight: 24,
+    fontSize: 16,
+    lineHeight: 23,
     marginBottom: 12,
   },
 
   mediaGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
+    gap: GRID_GAP,
   },
 
-  image: {
-    width: "48%",
-    height: 160,
+  thumbnail: {
+    width: GRID_ITEM_SIZE,
+    height: GRID_ITEM_SIZE,
     borderRadius: 14,
-    backgroundColor: "#000",
+    backgroundColor: "#111",
   },
 
-  time: {
-    fontSize: 12,
+  /* Modal */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
   },
 
-  fab: {
+  modalCard: {
+    width: "86%",
+    backgroundColor: "#1E2126",
+    borderRadius: 22,
+    padding: 22,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    shadowColor: "#000",
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+
+  modalTitle: {
+    fontSize: 18,
+    marginBottom: 6,
+  },
+
+  modalSubtitle: {
+    opacity: 0.75,
+  },
+
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 12,
+    marginTop: 24,
+  },
+
+  cancelBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
+
+  deleteBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: "#E45858",
+  },
+
+  /* FAB */
+  fabOuter: {
     position: "absolute",
     right: 20,
-    bottom: 96,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: Colors.dark.accent,
+    bottom: 64,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "rgba(108,140,255,0.18)",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowColor: "#6C8CFF",
+    shadowOpacity: 0.5,
+    shadowRadius: 32,
+    elevation: 20,
+  },
+
+  fabInner: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#6C8CFF",
+    alignItems: "center",
+    justifyContent: "center",
   },
 });
