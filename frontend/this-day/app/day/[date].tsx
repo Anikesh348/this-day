@@ -175,7 +175,7 @@ export default function DayViewScreen() {
                   <Image
                     key={assetId!}
                     source={{
-                      uri: `https://thisday.hostingfrompurva.xyz/api/media/immich/${assetId}?type=full`,
+                      uri: `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${assetId}?type=thumbnail`,
                     }}
                     style={styles.image}
                   />

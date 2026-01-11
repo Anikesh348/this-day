@@ -93,7 +93,7 @@ export default function TodayScreen() {
         {assetId ? (
           <Image
             source={{
-              uri: `https://thisday.hostingfrompurva.xyz/api/media/immich/${assetId}?type=thumbnail`,
+              uri: `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${assetId}?type=thumbnail`,
             }}
             style={styles.image}
           />
