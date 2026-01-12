@@ -16,14 +16,12 @@ import java.util.*;
 
 public class EntryRoutes {
 
-    private static final Logger log =
-            LoggerFactory.getLogger(EntryRoutes.class);
+    private static final Logger log = LoggerFactory.getLogger(EntryRoutes.class);
 
     public static void mount(
             Router router,
             AuthHandler authHandler,
-            EntryService entryService
-    ) {
+            EntryService entryService) {
 
         // CREATE ENTRY
         router.post("/api/entries")
@@ -35,31 +33,26 @@ public class EntryRoutes {
                     String caption = ctx.request().getFormAttribute("caption");
 
                     List<MultipartForm> forms = buildForms(ctx.fileUploads(), userId);
-
+                    ctx.response().setStatusCode(201).end();
                     entryService.createEntry(userId, caption, forms, ar -> {
                         if (ar.failed()) {
                             log.error("Create entry failed", ar.cause());
-                            ctx.fail(500);
                         } else {
-                            ctx.response().setStatusCode(201).end();
+                            log.info("entries have been adeded");
                         }
                     });
                 });
-
 
         router.post("/api/entries/backfill")
                 .handler(BodyHandler.create().setDeleteUploadedFilesOnEnd(false))
                 .handler(authHandler)
                 .handler(ctx -> {
 
-                    String userId =
-                            ctx.<JsonObject>get("authUser").getString("sub");
+                    String userId = ctx.<JsonObject>get("authUser").getString("sub");
 
-                    String caption =
-                            ctx.request().getFormAttribute("caption");
+                    String caption = ctx.request().getFormAttribute("caption");
 
-                    String dateStr =
-                            ctx.request().getFormAttribute("date"); // YYYY-MM-DD
+                    String dateStr = ctx.request().getFormAttribute("date"); // YYYY-MM-DD
 
                     if (dateStr == null || dateStr.isBlank()) {
                         ctx.fail(400);
@@ -74,9 +67,8 @@ public class EntryRoutes {
                         return;
                     }
 
-                    List<MultipartForm> forms =
-                            buildForms(ctx.fileUploads(), userId);
-
+                    List<MultipartForm> forms = buildForms(ctx.fileUploads(), userId);
+                    ctx.response().setStatusCode(201).end();
                     entryService.createPastEntry(
                             userId,
                             date,
@@ -85,14 +77,11 @@ public class EntryRoutes {
                             ar -> {
                                 if (ar.failed()) {
                                     log.error("Create past entry failed", ar.cause());
-                                    ctx.fail(500);
                                 } else {
-                                    ctx.response().setStatusCode(201).end();
+                                    log.info("entries have been added");
                                 }
-                            }
-                    );
+                            });
                 });
-
 
         // UPDATE ENTRY (caption + add/remove media)
         router.put("/api/entries/:entryId")
@@ -105,16 +94,13 @@ public class EntryRoutes {
 
                     String caption = ctx.request().getFormAttribute("caption");
 
-                    String removeAssetsRaw =
-                            ctx.request().getFormAttribute("removeAssetIds");
+                    String removeAssetsRaw = ctx.request().getFormAttribute("removeAssetIds");
 
-                    List<String> removeAssetIds =
-                            removeAssetsRaw == null
-                                    ? List.of()
-                                    : new JsonArray(removeAssetsRaw).getList();
+                    List<String> removeAssetIds = removeAssetsRaw == null
+                            ? List.of()
+                            : new JsonArray(removeAssetsRaw).getList();
 
-                    List<MultipartForm> newMedia =
-                            buildForms(ctx.fileUploads(), userId);
+                    List<MultipartForm> newMedia = buildForms(ctx.fileUploads(), userId);
 
                     entryService.updateEntry(
                             entryId,
@@ -129,8 +115,7 @@ public class EntryRoutes {
                                 } else {
                                     ctx.response().setStatusCode(204).end();
                                 }
-                            }
-                    );
+                            });
                 });
 
         // DELETE ENTRY (hard delete)
@@ -154,8 +139,7 @@ public class EntryRoutes {
 
     private static List<MultipartForm> buildForms(
             List<io.vertx.ext.web.FileUpload> uploads,
-            String userId
-    ) {
+            String userId) {
         List<MultipartForm> forms = new ArrayList<>();
 
         uploads.forEach(upload -> {
@@ -164,8 +148,7 @@ public class EntryRoutes {
                             "assetData",
                             upload.fileName(),
                             upload.uploadedFileName(),
-                            upload.contentType()
-                    )
+                            upload.contentType())
                     .attribute("deviceId", "thisday-backend-" + userId)
                     .attribute("deviceAssetId", UUID.randomUUID().toString())
                     .attribute("fileCreatedAt", Instant.now().toString())

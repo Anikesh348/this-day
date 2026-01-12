@@ -28,16 +28,21 @@ public class ImmichClient {
     public void uploadAsset(
             MultipartForm form,
             Handler<AsyncResult<String>> handler) {
+
         log.debug("Uploading asset to Immich");
         String url = baseUrl + "/api/assets";
-        log.info("Immich upload URL = {}", url);
+
+        // Capture the start time
+        long startTime = System.currentTimeMillis();
 
         client.postAbs(url)
                 .putHeader("x-api-key", apiKey)
                 .sendMultipartForm(form, ar -> {
+                    // Calculate duration as soon as the response (or failure) returns
+                    long duration = System.currentTimeMillis() - startTime;
 
                     if (ar.failed()) {
-                        log.error("Immich upload request failed", ar.cause());
+                        log.error("Immich upload request failed after {}ms. Cause: {}", duration, ar.cause().getMessage());
                         handler.handle(Future.failedFuture(ar.cause()));
                         return;
                     }
@@ -46,10 +51,8 @@ public class ImmichClient {
                     int status = response.statusCode();
                     String rawBody = response.bodyAsString();
 
-                    log.info("Immich upload response status={}", status);
-                    log.debug("Immich upload raw body={}", rawBody);
-
                     if (status < 200 || status >= 300) {
+                        log.warn("Immich upload failed with status {} in {}ms", status, duration);
                         handler.handle(Future.failedFuture(
                                 "Immich upload failed: " + status + " " + rawBody));
                         return;
@@ -57,14 +60,15 @@ public class ImmichClient {
 
                     try {
                         var jsonObject = response.bodyAsJsonObject();
+                        String assetId = jsonObject.getString("id");
 
-                        String assetId = jsonObject
-                                .getString("id");
+                        // Successful Log with Time
+                        log.info("Immich upload successful. AssetId: {} | Duration: {}ms", assetId, duration);
 
                         handler.handle(Future.succeededFuture(assetId));
 
                     } catch (Exception e) {
-                        log.error("Failed to parse Immich response", e);
+                        log.error("Failed to parse Immich response after {}ms", duration, e);
                         handler.handle(Future.failedFuture(e));
                     }
                 });
