@@ -70,17 +70,13 @@ public class ImmichClient {
                 });
     }
 
-    public void streamAsset(
-            RoutingContext ctx,
-            String assetId,
-            String type) {
+    public void streamAsset(RoutingContext ctx, String assetId, String type) {
         HttpServerRequest request = ctx.request();
         HttpServerResponse response = ctx.response();
 
         String endpoint = "thumbnail".equalsIgnoreCase(type)
                 ? "/api/assets/" + assetId + "/thumbnail"
                 : "/api/assets/" + assetId + "/original";
-
         String url = baseUrl + endpoint;
 
         log.info("Streaming Immich asset assetId={} type={}", assetId, type);
@@ -89,7 +85,7 @@ public class ImmichClient {
                 .getAbs(url)
                 .putHeader("x-api-key", apiKey);
 
-        // ✅ Forward Range header (CRITICAL for video)
+        // Forward Range header (still useful for video seeking)
         String range = request.getHeader("Range");
         if (range != null) {
             immichReq.putHeader("Range", range);
@@ -106,31 +102,32 @@ public class ImmichClient {
 
             HttpResponse<Buffer> immichResp = ar.result();
 
-            // ✅ SET STATUS + HEADERS FIRST
+            // Set status + headers
             response.setStatusCode(immichResp.statusCode());
-
             copyHeader(immichResp, response, "Content-Type");
             copyHeader(immichResp, response, "Content-Length");
             copyHeader(immichResp, response, "Content-Range");
+            copyHeader(immichResp, response, "Accept-Ranges");
 
-            response.putHeader("Accept-Ranges", "bytes");
+            // ✅ THE FIX: Prevent download, enable inline playback
+            response.putHeader("Content-Disposition", "inline");
 
+            // Cache headers
             if ("thumbnail".equalsIgnoreCase(type)) {
                 response.putHeader("Cache-Control", "no-store");
             } else {
                 response.putHeader("Cache-Control", "public, max-age=31536000, immutable");
             }
 
-            // ✅ STREAM BODY SAFELY (no buffering, no head issues)
-            response.write(immichResp.body());
-            response.end();
+            // Write body
+            response.end(immichResp.body());
         });
     }
 
-    private void copyHeader(HttpResponse<?> from, HttpServerResponse to, String name) {
-        String value = from.getHeader(name);
+    private void copyHeader(HttpResponse<?> source, HttpServerResponse target, String headerName) {
+        String value = source.getHeader(headerName);
         if (value != null) {
-            to.putHeader(name, value);
+            target.putHeader(headerName, value);
         }
     }
 }
