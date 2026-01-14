@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -42,27 +42,30 @@ export default function DayViewScreen() {
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
 
-  useEffect(() => {
+  const loadData = async () => {
     if (!date) return;
+    setLoading(true);
+
     const [y, m, d] = date.split("-").map(Number);
 
-    getDayEntries(y, m, d)
-      .then((res) => setEntries(res.data))
-      .finally(() => setLoading(false));
-  }, [date]);
+    try {
+      const res = await getDayEntries(y, m, d);
+      setEntries(res.data);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [date])
+  );
 
   const handleBack = () => {
     if (router.canGoBack()) router.back();
     else router.replace(from === "calendar" ? "/calendar" : "/today");
   };
-
-  if (loading) {
-    return (
-      <Screen>
-        <ActivityIndicator />
-      </Screen>
-    );
-  }
 
   return (
     <Screen>
@@ -80,83 +83,98 @@ export default function DayViewScreen() {
             />
           </Pressable>
 
-          <Title style={styles.title}>
-            {new Date(date!).toLocaleDateString(undefined, {
-              weekday: "long",
-            })}
-          </Title>
+          <View style={styles.headerText}>
+            <Title style={styles.title}>
+              {new Date(date!).toLocaleDateString(undefined, {
+                weekday: "long",
+              })}
+            </Title>
 
-          <Muted style={styles.subtitle}>
-            {new Date(date!).toLocaleDateString(undefined, {
-              month: "long",
-              day: "numeric",
-              year: "numeric",
-            })}
-          </Muted>
+            <Muted style={styles.subtitle}>
+              {new Date(date!).toLocaleDateString(undefined, {
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </Muted>
+          </View>
+
+          <Pressable
+            onPress={loadData}
+            disabled={loading}
+            style={({ pressed }) => [
+              styles.refreshBtn,
+              pressed && { opacity: 0.6 },
+              loading && { opacity: 0.4 },
+            ]}
+          >
+            <Ionicons name="refresh" size={30} color={Colors.dark.textMuted} />
+          </Pressable>
         </View>
 
         <View style={styles.stack}>
-          {entries.length === 0 && (
+          {loading && <Muted>Loading…</Muted>}
+
+          {!loading && entries.length === 0 && (
             <View style={[styles.card, styles.emptyCard]}>
               <Muted>No entries for this day</Muted>
             </View>
           )}
 
-          {entries.map((entry) => (
-            <View key={entry._id} style={styles.card}>
-              {/* Card header */}
-              <View style={styles.cardHeader}>
-                <Muted style={styles.time}>
-                  {new Date(entry.createdAt).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </Muted>
+          {!loading &&
+            entries.map((entry) => (
+              <View key={entry._id} style={styles.card}>
+                {/* Card header */}
+                <View style={styles.cardHeader}>
+                  <Muted style={styles.time}>
+                    {new Date(entry.createdAt).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </Muted>
 
-                <Pressable
-                  onPress={() => {
-                    setDeleteTargetId(entry._id);
-                    setDeleteModalVisible(true);
-                  }}
-                >
-                  <Ionicons
-                    name="trash-outline"
-                    size={18}
-                    color={Colors.dark.textPrimary}
-                  />
-                </Pressable>
-              </View>
-
-              {/* Caption */}
-              {entry.caption && (
-                <Body style={styles.caption}>{entry.caption}</Body>
-              )}
-
-              {/* Media grid */}
-              {entry.immichAssetIds?.filter(Boolean).length > 0 && (
-                <View style={styles.mediaGrid}>
-                  {entry.immichAssetIds.filter(Boolean).map((assetId) => (
-                    <Pressable
-                      key={assetId!}
-                      onPress={() =>
-                        router.push({
-                          pathname: "media/[assetId]",
-                          params: { assetId },
-                        })
-                      }
-                    >
-                      <Image
-                        source={{
-                          uri: `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${assetId}?type=thumbnail`,
-                        }}
-                        style={styles.thumbnail}
-                      />
-                    </Pressable>
-                  ))}
+                  <Pressable
+                    onPress={() => {
+                      setDeleteTargetId(entry._id);
+                      setDeleteModalVisible(true);
+                    }}
+                  >
+                    <Ionicons
+                      name="trash-outline"
+                      size={18}
+                      color={Colors.dark.textPrimary}
+                    />
+                  </Pressable>
                 </View>
-              )}
-            </View>
-          ))}
+
+                {entry.caption && (
+                  <Body style={styles.caption}>{entry.caption}</Body>
+                )}
+
+                {entry.immichAssetIds?.filter(Boolean).length > 0 && (
+                  <View style={styles.mediaGrid}>
+                    {entry.immichAssetIds.filter(Boolean).map((assetId) => (
+                      <Pressable
+                        key={assetId!}
+                        onPress={() =>
+                          router.push({
+                            pathname: "media/[assetId]",
+                            params: { assetId },
+                          })
+                        }
+                      >
+                        <Image
+                          source={{
+                            uri: `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${assetId}?type=thumbnail`,
+                          }}
+                          style={styles.thumbnail}
+                        />
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+              </View>
+            ))}
         </View>
       </ScrollView>
 
@@ -165,7 +183,6 @@ export default function DayViewScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Title style={styles.modalTitle}>Delete entry?</Title>
-
             <Muted style={styles.modalSubtitle}>
               This action cannot be undone.
             </Muted>
@@ -220,14 +237,27 @@ const styles = StyleSheet.create({
   },
 
   header: {
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     marginBottom: 28,
+  },
+
+  headerText: {
+    alignItems: "center",
   },
 
   backBtn: {
     position: "absolute",
     left: 0,
     top: 2,
+  },
+
+  refreshBtn: {
+    position: "absolute",
+    right: 0,
+    padding: 8,
+    borderRadius: 20,
   },
 
   title: {
@@ -288,7 +318,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#111",
   },
 
-  /* Modal */
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.55)",
@@ -303,10 +332,6 @@ const styles = StyleSheet.create({
     padding: 22,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
-    shadowColor: "#000",
-    shadowOpacity: 0.4,
-    shadowRadius: 24,
-    elevation: 20,
   },
 
   modalTitle: {
@@ -339,7 +364,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#E45858",
   },
 
-  /* FAB */
   fabOuter: {
     position: "absolute",
     right: 20,
@@ -350,10 +374,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(108,140,255,0.18)",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#6C8CFF",
-    shadowOpacity: 0.5,
-    shadowRadius: 32,
-    elevation: 20,
   },
 
   fabInner: {

@@ -28,15 +28,15 @@ public class EntryRoutes {
                 .handler(BodyHandler.create().setDeleteUploadedFilesOnEnd(false))
                 .handler(authHandler)
                 .handler(ctx -> {
-
                     String userId = ctx.<JsonObject>get("authUser").getString("sub");
                     String caption = ctx.request().getFormAttribute("caption");
-                    ctx.response().setStatusCode(201).end();
                     List<MultipartForm> forms = buildForms(ctx.fileUploads(), userId);
                     entryService.createEntry(userId, caption, forms, ar -> {
                         if (ar.failed()) {
+                            ctx.fail(500);
                             log.error("Create entry failed", ar.cause());
                         } else {
+                            ctx.response().setStatusCode(201).end();
                             log.info("entries have been adeded");
                         }
                     });
@@ -66,8 +66,6 @@ public class EntryRoutes {
                         return;
                     }
 
-                    ctx.response().setStatusCode(201).end();
-
                     List<MultipartForm> forms = buildForms(ctx.fileUploads(), userId);
                     entryService.createPastEntry(
                             userId,
@@ -76,8 +74,10 @@ public class EntryRoutes {
                             forms,
                             ar -> {
                                 if (ar.failed()) {
+                                    ctx.fail(500);
                                     log.error("Create past entry failed", ar.cause());
                                 } else {
+                                    ctx.response().setStatusCode(201).end();
                                     log.info("entries have been added");
                                 }
                             });

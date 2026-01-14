@@ -14,7 +14,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Calendar } from "react-native-calendars";
 
 import { Screen } from "@/components/Screen";
 import { Body, Muted, Title } from "@/components/Text";
@@ -40,7 +39,6 @@ export default function AddEntryScreen() {
     date ?? new Date().toISOString().slice(0, 10)
   );
 
-  const [showCalendar, setShowCalendar] = useState(false);
   const [caption, setCaption] = useState("");
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -57,7 +55,6 @@ export default function AddEntryScreen() {
       setSubmitting(false);
       setEntryMode("today");
       setPastDateString(date ?? new Date().toISOString().slice(0, 10));
-      setShowCalendar(false);
       setShowSuccess(false);
       setCountdown(3);
     }, [date])
@@ -90,8 +87,10 @@ export default function AddEntryScreen() {
     });
 
     if (!res.canceled) {
-      const items = res.assets.map((a) => ({ ...a, loading: true }));
-      setMedia((p) => [...p, ...items]);
+      setMedia((p) => [
+        ...p,
+        ...res.assets.map((a) => ({ ...a, loading: true })),
+      ]);
     }
   };
 
@@ -105,8 +104,10 @@ export default function AddEntryScreen() {
     });
 
     if (!res.canceled) {
-      const items = res.assets.map((a) => ({ ...a, loading: true }));
-      setMedia((p) => [...p, ...items]);
+      setMedia((p) => [
+        ...p,
+        ...res.assets.map((a) => ({ ...a, loading: true })),
+      ]);
     }
   };
 
@@ -120,29 +121,57 @@ export default function AddEntryScreen() {
     );
   };
 
-  const submit = async () => {
+  /**
+   * OPTIMISTIC SUBMIT + FIXED VIDEO UPLOAD
+   */
+  const submit = () => {
     if (submitting) return;
+
     setSubmitting(true);
+    setCountdown(3);
+    setShowSuccess(true); // optimistic UI
 
-    try {
-      const files = media.map((m) => ({
-        uri: m.uri,
-        name: m.fileName ?? `media-${Date.now()}`,
-        type: m.type === "video" ? "video/mp4" : "image/jpeg",
-      }));
+    const files = media.map((m) => {
+      let mime = "image/jpeg";
+      let name = m.fileName;
 
-      if (isBackfill) {
-        const d = forcedBackfill ? date! : pastDateString;
-        await createBackfilledEntry(d, caption, files);
+      if (m.type === "video") {
+        mime = m.mimeType ?? "video/mp4";
+
+        if (!name) {
+          const ext = mime.includes("quicktime")
+            ? "mov"
+            : mime.includes("webm")
+            ? "webm"
+            : "mp4";
+
+          name = `video-${Date.now()}.${ext}`;
+        }
       } else {
-        await createEntry(caption, files);
+        name = name ?? `image-${Date.now()}.jpg`;
       }
 
-      setCountdown(3);
-      setShowSuccess(true);
-    } finally {
-      setSubmitting(false);
-    }
+      return {
+        uri: m.uri,
+        name,
+        type: mime,
+      };
+    });
+
+    (async () => {
+      try {
+        if (isBackfill) {
+          const d = forcedBackfill ? date! : pastDateString;
+          await createBackfilledEntry(d, caption, files);
+        } else {
+          await createEntry(caption, files);
+        }
+      } catch (err) {
+        console.error("Entry upload failed", err);
+      } finally {
+        setSubmitting(false);
+      }
+    })();
   };
 
   const displayDate = forcedBackfill ? date! : pastDateString;
@@ -254,15 +283,10 @@ export default function AddEntryScreen() {
           style={[styles.saveBtn, submitting && { opacity: 0.6 }]}
           onPress={submit}
         >
-          {submitting ? (
-            <ActivityIndicator color="white" />
-          ) : (
-            <Body style={{ color: "white" }}>Save Entry</Body>
-          )}
+          <Body style={{ color: "white" }}>Save Entry</Body>
         </Pressable>
       </ScrollView>
 
-      {/* Success Modal */}
       <Modal visible={showSuccess} transparent animationType="fade">
         <View style={styles.successOverlay}>
           <View style={styles.successCard}>
@@ -285,7 +309,6 @@ const styles = StyleSheet.create({
   topBar: { paddingHorizontal: 16, paddingTop: 8 },
   scroll: { padding: 24, paddingBottom: 140 },
   subtitle: { marginBottom: 20 },
-
   toggle: {
     flexDirection: "row",
     backgroundColor: "#1F2328",
@@ -293,10 +316,8 @@ const styles = StyleSheet.create({
     padding: 4,
     marginBottom: 16,
   },
-
   toggleBtn: { flex: 1, paddingVertical: 10, alignItems: "center" },
   toggleActive: { backgroundColor: "#2C3440", borderRadius: 16 },
-
   dateRow: {
     flexDirection: "row",
     gap: 10,
@@ -305,7 +326,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#1F2328",
     marginBottom: 16,
   },
-
   editor: {
     minHeight: 180,
     padding: 18,
@@ -314,30 +334,25 @@ const styles = StyleSheet.create({
     color: Colors.dark.textPrimary,
     fontSize: 18,
   },
-
   mediaStrip: {
     marginTop: 16,
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
   },
-
   mediaWrapper: {
     width: "48%",
     height: 160,
     borderRadius: 18,
     overflow: "hidden",
   },
-
   media: { width: "100%", height: "100%" },
-
   mediaLoader: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.6)",
     alignItems: "center",
     justifyContent: "center",
   },
-
   removeBtn: {
     position: "absolute",
     top: 6,
@@ -346,9 +361,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 4,
   },
-
   actionRow: { marginTop: 20, flexDirection: "row", gap: 14 },
-
   iconBtn: {
     width: 56,
     height: 56,
@@ -357,7 +370,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
   saveBtn: {
     marginTop: 28,
     paddingVertical: 16,
@@ -365,14 +377,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#6C8CFF",
     alignItems: "center",
   },
-
   successOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "center",
     alignItems: "center",
   },
-
   successCard: {
     backgroundColor: "#1F2328",
     padding: 24,
@@ -380,21 +390,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     width: "80%",
   },
-
   successTitle: {
     color: Colors.dark.textPrimary,
     fontSize: 18,
     fontWeight: "600",
     marginTop: 10,
   },
-
   successText: {
     color: Colors.dark.textMuted,
     fontSize: 14,
     textAlign: "center",
     marginTop: 6,
   },
-
   countdownText: {
     color: "#8AA4FF",
     fontSize: 13,
