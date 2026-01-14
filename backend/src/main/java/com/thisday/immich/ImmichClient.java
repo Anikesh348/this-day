@@ -2,12 +2,15 @@ package com.thisday.immich;
 
 import com.thisday.config.AppConfig;
 import io.vertx.core.*;
-import io.vertx.ext.web.client.WebClient;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.core.http.HttpServerRequest;
+import io.vertx.core.http.HttpServerResponse;
+import io.vertx.ext.web.RoutingContext;
+import io.vertx.ext.web.client.*;
+import io.vertx.ext.web.codec.BodyCodec;
 import io.vertx.ext.web.multipart.MultipartForm;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import io.vertx.ext.web.codec.BodyCodec;
-import io.vertx.core.http.HttpServerResponse;
 
 public class ImmichClient {
 
@@ -25,97 +28,109 @@ public class ImmichClient {
         log.info("ImmichClient initialized [baseUrl={}]", baseUrl);
     }
 
+    /*
+     * ============================================================
+     * UPLOAD
+     * ============================================================
+     */
     public void uploadAsset(
             MultipartForm form,
             Handler<AsyncResult<String>> handler) {
 
-        log.debug("Uploading asset to Immich");
         String url = baseUrl + "/api/assets";
-
-        // Capture the start time
         long startTime = System.currentTimeMillis();
 
         client.postAbs(url)
                 .putHeader("x-api-key", apiKey)
                 .sendMultipartForm(form, ar -> {
-                    // Calculate duration as soon as the response (or failure) returns
+
                     long duration = System.currentTimeMillis() - startTime;
 
                     if (ar.failed()) {
-                        log.error("Immich upload request failed after {}ms. Cause: {}", duration, ar.cause().getMessage());
+                        log.error("Immich upload failed after {}ms", duration, ar.cause());
                         handler.handle(Future.failedFuture(ar.cause()));
                         return;
                     }
 
-                    var response = ar.result();
-                    int status = response.statusCode();
-                    String rawBody = response.bodyAsString();
+                    HttpResponse<Buffer> response = ar.result();
 
-                    if (status < 200 || status >= 300) {
-                        log.warn("Immich upload failed with status {} in {}ms", status, duration);
+                    if (response.statusCode() < 200 || response.statusCode() >= 300) {
                         handler.handle(Future.failedFuture(
-                                "Immich upload failed: " + status + " " + rawBody));
+                                "Immich upload failed: " + response.statusCode() + " " + response.bodyAsString()));
                         return;
                     }
 
                     try {
-                        var jsonObject = response.bodyAsJsonObject();
-                        String assetId = jsonObject.getString("id");
-
-                        // Successful Log with Time
-                        log.info("Immich upload successful. AssetId: {} | Duration: {}ms", assetId, duration);
-
+                        String assetId = response.bodyAsJsonObject().getString("id");
+                        log.info("Immich upload success assetId={} duration={}ms", assetId, duration);
                         handler.handle(Future.succeededFuture(assetId));
-
                     } catch (Exception e) {
-                        log.error("Failed to parse Immich response after {}ms", duration, e);
                         handler.handle(Future.failedFuture(e));
                     }
                 });
     }
 
     public void streamAsset(
+            RoutingContext ctx,
             String assetId,
-            String type,
-            HttpServerResponse response) {
-        String endpoint;
+            String type) {
+        HttpServerRequest request = ctx.request();
+        HttpServerResponse response = ctx.response();
 
-        if ("full".equalsIgnoreCase(type)) {
-            endpoint = "/api/assets/" + assetId + "/original";
-        } else {
-            endpoint = "/api/assets/" + assetId + "/thumbnail";
-        }
+        String endpoint = "thumbnail".equalsIgnoreCase(type)
+                ? "/api/assets/" + assetId + "/thumbnail"
+                : "/api/assets/" + assetId + "/original";
 
         String url = baseUrl + endpoint;
 
-        log.info("Streaming Immich asset url={} type={}", url, type);
-        String normalizedType = type == null ? "" : type.toLowerCase();
+        log.info("Streaming Immich asset assetId={} type={}", assetId, type);
 
-        if ("thumbnail".equals(normalizedType)) {
-            response
-                    .putHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-                    .putHeader("Pragma", "no-cache")
-                    .putHeader("Expires", "0")
-                    .putHeader("Content-Encoding", "identity");
-        } else {
-            response
-                    .putHeader("Cache-Control", "public, max-age=31536000");
+        HttpRequest<Buffer> immichReq = client
+                .getAbs(url)
+                .putHeader("x-api-key", apiKey);
+
+        // ✅ Forward Range header (CRITICAL for video)
+        String range = request.getHeader("Range");
+        if (range != null) {
+            immichReq.putHeader("Range", range);
         }
 
-        response
-                .setChunked(true)
-                .setStatusCode(200);
+        immichReq.send(ar -> {
+            if (ar.failed()) {
+                log.error("Immich stream request failed", ar.cause());
+                if (!response.ended()) {
+                    response.setStatusCode(502).end();
+                }
+                return;
+            }
 
-        client.getAbs(url)
-                .putHeader("x-api-key", apiKey)
-                .as(BodyCodec.pipe(response))
-                .send(ar -> {
-                    if (ar.failed()) {
-                        log.error("Immich stream failed", ar.cause());
-                        if (!response.ended()) {
-                            response.setStatusCode(502).end();
-                        }
-                    }
-                });
+            HttpResponse<Buffer> immichResp = ar.result();
+
+            // ✅ SET STATUS + HEADERS FIRST
+            response.setStatusCode(immichResp.statusCode());
+
+            copyHeader(immichResp, response, "Content-Type");
+            copyHeader(immichResp, response, "Content-Length");
+            copyHeader(immichResp, response, "Content-Range");
+
+            response.putHeader("Accept-Ranges", "bytes");
+
+            if ("thumbnail".equalsIgnoreCase(type)) {
+                response.putHeader("Cache-Control", "no-store");
+            } else {
+                response.putHeader("Cache-Control", "public, max-age=31536000, immutable");
+            }
+
+            // ✅ STREAM BODY SAFELY (no buffering, no head issues)
+            response.write(immichResp.body());
+            response.end();
+        });
+    }
+
+    private void copyHeader(HttpResponse<?> from, HttpServerResponse to, String name) {
+        String value = from.getHeader(name);
+        if (value != null) {
+            to.putHeader(name, value);
+        }
     }
 }

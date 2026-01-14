@@ -31,9 +31,8 @@ public class EntryRoutes {
 
                     String userId = ctx.<JsonObject>get("authUser").getString("sub");
                     String caption = ctx.request().getFormAttribute("caption");
-
-                    List<MultipartForm> forms = buildForms(ctx.fileUploads(), userId);
                     ctx.response().setStatusCode(201).end();
+                    List<MultipartForm> forms = buildForms(ctx.fileUploads(), userId);
                     entryService.createEntry(userId, caption, forms, ar -> {
                         if (ar.failed()) {
                             log.error("Create entry failed", ar.cause());
@@ -67,8 +66,9 @@ public class EntryRoutes {
                         return;
                     }
 
-                    List<MultipartForm> forms = buildForms(ctx.fileUploads(), userId);
                     ctx.response().setStatusCode(201).end();
+
+                    List<MultipartForm> forms = buildForms(ctx.fileUploads(), userId);
                     entryService.createPastEntry(
                             userId,
                             date,

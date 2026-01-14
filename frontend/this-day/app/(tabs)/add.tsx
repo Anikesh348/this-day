@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import { ResizeMode, Video } from "expo-av";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -9,6 +10,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Text,
   TextInput,
   View,
 } from "react-native";
@@ -18,6 +20,10 @@ import { Screen } from "@/components/Screen";
 import { Body, Muted, Title } from "@/components/Text";
 import { createBackfilledEntry, createEntry } from "@/services/entries";
 import { Colors } from "@/theme/colors";
+
+type MediaItem = ImagePicker.ImagePickerAsset & {
+  loading?: boolean;
+};
 
 export default function AddEntryScreen() {
   const router = useRouter();
@@ -36,8 +42,11 @@ export default function AddEntryScreen() {
 
   const [showCalendar, setShowCalendar] = useState(false);
   const [caption, setCaption] = useState("");
-  const [media, setMedia] = useState<ImagePicker.ImagePickerAsset[]>([]);
+  const [media, setMedia] = useState<MediaItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
+
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [countdown, setCountdown] = useState(3);
 
   const isBackfill = forcedBackfill || entryMode === "past";
 
@@ -49,8 +58,23 @@ export default function AddEntryScreen() {
       setEntryMode("today");
       setPastDateString(date ?? new Date().toISOString().slice(0, 10));
       setShowCalendar(false);
+      setShowSuccess(false);
+      setCountdown(3);
     }, [date])
   );
+
+  useEffect(() => {
+    if (!showSuccess) return;
+
+    if (countdown === 0) {
+      setShowSuccess(false);
+      router.replace("/today");
+      return;
+    }
+
+    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [showSuccess, countdown]);
 
   const handleBack = () => {
     if (from === "today") router.replace("/today");
@@ -61,17 +85,39 @@ export default function AddEntryScreen() {
   const addFromGallery = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: true,
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
       quality: 0.9,
     });
-    if (!res.canceled) setMedia((p) => [...p, ...res.assets]);
+
+    if (!res.canceled) {
+      const items = res.assets.map((a) => ({ ...a, loading: true }));
+      setMedia((p) => [...p, ...items]);
+    }
   };
 
   const captureFromCamera = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) return;
 
-    const res = await ImagePicker.launchCameraAsync({ quality: 0.9 });
-    if (!res.canceled) setMedia((p) => [...p, ...res.assets]);
+    const res = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      quality: 0.9,
+    });
+
+    if (!res.canceled) {
+      const items = res.assets.map((a) => ({ ...a, loading: true }));
+      setMedia((p) => [...p, ...items]);
+    }
+  };
+
+  const removeMedia = (uri: string) => {
+    setMedia((p) => p.filter((m) => m.uri !== uri));
+  };
+
+  const markLoaded = (uri: string) => {
+    setMedia((p) =>
+      p.map((m) => (m.uri === uri ? { ...m, loading: false } : m))
+    );
   };
 
   const submit = async () => {
@@ -81,7 +127,7 @@ export default function AddEntryScreen() {
     try {
       const files = media.map((m) => ({
         uri: m.uri,
-        name: m.fileName ?? `media-${Date.now()}.jpg`,
+        name: m.fileName ?? `media-${Date.now()}`,
         type: m.type === "video" ? "video/mp4" : "image/jpeg",
       }));
 
@@ -92,15 +138,17 @@ export default function AddEntryScreen() {
         await createEntry(caption, files);
       }
 
-      router.replace("/today");
+      setCountdown(3);
+      setShowSuccess(true);
     } finally {
       setSubmitting(false);
     }
   };
 
+  const displayDate = forcedBackfill ? date! : pastDateString;
+
   return (
     <Screen>
-      {/* Top bar */}
       <View style={styles.topBar}>
         <Pressable onPress={handleBack}>
           <Ionicons
@@ -128,46 +176,23 @@ export default function AddEntryScreen() {
                   entryMode === v && styles.toggleActive,
                 ]}
               >
-                <Body
-                  style={{
-                    color:
-                      entryMode === v
-                        ? Colors.dark.textPrimary
-                        : Colors.dark.textMuted,
-                  }}
-                >
-                  {v === "today" ? "Today" : "Past"}
-                </Body>
+                <Body>{v === "today" ? "Today" : "Past"}</Body>
               </Pressable>
             ))}
           </View>
         )}
 
-        {!forcedBackfill && entryMode === "past" && (
-          <Pressable
-            style={styles.dateRow}
-            onPress={() => setShowCalendar(true)}
-          >
+        {(forcedBackfill || entryMode === "past") && (
+          <View style={styles.dateRow}>
             <Ionicons
               name="calendar-outline"
               size={18}
               color={Colors.dark.textMuted}
             />
-            <Body>
-              {new Date(`${pastDateString}T00:00:00`).toLocaleDateString(
-                undefined,
-                {
-                  weekday: "short",
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                }
-              )}
-            </Body>
-          </Pressable>
+            <Body>{new Date(`${displayDate}T00:00:00`).toDateString()}</Body>
+          </View>
         )}
 
-        {/* Writing */}
         <TextInput
           value={caption}
           onChangeText={setCaption}
@@ -177,31 +202,54 @@ export default function AddEntryScreen() {
           style={styles.editor}
         />
 
-        {/* Media */}
         {media.length > 0 && (
           <View style={styles.mediaStrip}>
-            {media.map((m, i) => (
-              <Image
-                key={i}
-                source={{ uri: m.uri }}
-                style={styles.mediaImage}
-              />
+            {media.map((m) => (
+              <View key={m.uri} style={styles.mediaWrapper}>
+                {m.type === "video" ? (
+                  <Video
+                    source={{ uri: m.uri }}
+                    style={styles.media}
+                    useNativeControls
+                    resizeMode={ResizeMode.CONTAIN}
+                    onLoad={() => markLoaded(m.uri)}
+                  />
+                ) : (
+                  <Image
+                    source={{ uri: m.uri }}
+                    style={styles.media}
+                    onLoadEnd={() => markLoaded(m.uri)}
+                  />
+                )}
+
+                {m.loading && (
+                  <View style={styles.mediaLoader}>
+                    <ActivityIndicator color="#fff" />
+                  </View>
+                )}
+
+                {!m.loading && (
+                  <Pressable
+                    style={styles.removeBtn}
+                    onPress={() => removeMedia(m.uri)}
+                  >
+                    <Ionicons name="close" size={16} color="white" />
+                  </Pressable>
+                )}
+              </View>
             ))}
           </View>
         )}
 
-        {/* Actions */}
         <View style={styles.actionRow}>
           <Pressable style={styles.iconBtn} onPress={addFromGallery}>
             <Ionicons name="images-outline" size={22} color="#8AA4FF" />
           </Pressable>
-
           <Pressable style={styles.iconBtn} onPress={captureFromCamera}>
             <Ionicons name="camera-outline" size={22} color="#8AA4FF" />
           </Pressable>
         </View>
 
-        {/* Save */}
         <Pressable
           style={[styles.saveBtn, submitting && { opacity: 0.6 }]}
           onPress={submit}
@@ -214,38 +262,18 @@ export default function AddEntryScreen() {
         </Pressable>
       </ScrollView>
 
-      {/* Modern Bottom-Sheet Calendar */}
-      <Modal visible={showCalendar} transparent animationType="slide">
-        <View style={styles.sheetOverlay}>
-          <View style={styles.sheet}>
-            <View style={styles.sheetHeader}>
-              <Muted>Select date</Muted>
-              <Pressable onPress={() => setShowCalendar(false)}>
-                <Ionicons
-                  name="close"
-                  size={22}
-                  color={Colors.dark.textMuted}
-                />
-              </Pressable>
-            </View>
-
-            <Calendar
-              current={pastDateString}
-              maxDate={new Date().toISOString().slice(0, 10)}
-              onDayPress={(d) => {
-                setPastDateString(d.dateString);
-                setShowCalendar(false);
-              }}
-              theme={{
-                calendarBackground: Colors.dark.surface,
-                dayTextColor: Colors.dark.textPrimary,
-                monthTextColor: Colors.dark.textPrimary,
-                selectedDayBackgroundColor: "#6C8CFF",
-                todayTextColor: "#6C8CFF",
-                arrowColor: Colors.dark.textPrimary,
-              }}
-              markedDates={{ [pastDateString]: { selected: true } }}
-            />
+      {/* Success Modal */}
+      <Modal visible={showSuccess} transparent animationType="fade">
+        <View style={styles.successOverlay}>
+          <View style={styles.successCard}>
+            <Ionicons name="cloud-done-outline" size={28} color="#6C8CFF" />
+            <Text style={styles.successTitle}>Entry saved</Text>
+            <Text style={styles.successText}>
+              This entry will sync to the cloud shortly.
+            </Text>
+            <Text style={styles.countdownText}>
+              Redirecting in {countdown}s
+            </Text>
           </View>
         </View>
       </Modal>
@@ -255,16 +283,8 @@ export default function AddEntryScreen() {
 
 const styles = StyleSheet.create({
   topBar: { paddingHorizontal: 16, paddingTop: 8 },
-
-  scroll: {
-    padding: 24,
-    paddingBottom: 140,
-  },
-
-  subtitle: {
-    marginTop: 6,
-    marginBottom: 20,
-  },
+  scroll: { padding: 24, paddingBottom: 140 },
+  subtitle: { marginBottom: 20 },
 
   toggle: {
     flexDirection: "row",
@@ -274,20 +294,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
 
-  toggleBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: "center",
-    borderRadius: 16,
-  },
-
-  toggleActive: {
-    backgroundColor: "#2C3440",
-  },
+  toggleBtn: { flex: 1, paddingVertical: 10, alignItems: "center" },
+  toggleActive: { backgroundColor: "#2C3440", borderRadius: 16 },
 
   dateRow: {
     flexDirection: "row",
-    alignItems: "center",
     gap: 10,
     padding: 14,
     borderRadius: 16,
@@ -302,7 +313,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#1F2328",
     color: Colors.dark.textPrimary,
     fontSize: 18,
-    lineHeight: 26,
   },
 
   mediaStrip: {
@@ -312,17 +322,32 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
-  mediaImage: {
+  mediaWrapper: {
     width: "48%",
     height: 160,
     borderRadius: 18,
+    overflow: "hidden",
   },
 
-  actionRow: {
-    marginTop: 20,
-    flexDirection: "row",
-    gap: 14,
+  media: { width: "100%", height: "100%" },
+
+  mediaLoader: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    alignItems: "center",
+    justifyContent: "center",
   },
+
+  removeBtn: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    borderRadius: 12,
+    padding: 4,
+  },
+
+  actionRow: { marginTop: 20, flexDirection: "row", gap: 14 },
 
   iconBtn: {
     width: 56,
@@ -341,23 +366,38 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  sheetOverlay: {
+  successOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,1)",
-    justifyContent: "flex-end",
-  },
-
-  sheet: {
-    backgroundColor: Colors.dark.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 20,
-  },
-
-  sheetHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
     alignItems: "center",
-    marginBottom: 12,
+  },
+
+  successCard: {
+    backgroundColor: "#1F2328",
+    padding: 24,
+    borderRadius: 22,
+    alignItems: "center",
+    width: "80%",
+  },
+
+  successTitle: {
+    color: Colors.dark.textPrimary,
+    fontSize: 18,
+    fontWeight: "600",
+    marginTop: 10,
+  },
+
+  successText: {
+    color: Colors.dark.textMuted,
+    fontSize: 14,
+    textAlign: "center",
+    marginTop: 6,
+  },
+
+  countdownText: {
+    color: "#8AA4FF",
+    fontSize: 13,
+    marginTop: 12,
   },
 });

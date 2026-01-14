@@ -91,16 +91,13 @@ export default function TodayScreen() {
 
     return (
       <Pressable style={styles.card} onPress={() => openDay(entry.date)}>
-        {/* Card header */}
         <View style={styles.cardHeader}>
           <Muted style={styles.cardLabel}>{label}</Muted>
-
           {showDateHint && (
             <Muted style={styles.dateHint}>{formatDate(entry.date)}</Muted>
           )}
         </View>
 
-        {/* Image */}
         {assetId && (
           <Image
             source={{
@@ -110,7 +107,6 @@ export default function TodayScreen() {
           />
         )}
 
-        {/* Caption preview */}
         {hasCaption && (
           <Body
             numberOfLines={2}
@@ -120,7 +116,6 @@ export default function TodayScreen() {
           </Body>
         )}
 
-        {/* No image fallback */}
         {!assetId && !hasCaption && <Muted>No details added</Muted>}
       </Pressable>
     );
@@ -140,9 +135,23 @@ export default function TodayScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
-        <View style={styles.header}>
-          <Title>This Day</Title>
-          <Muted style={styles.subtitle}>Private. Calm. Timeless.</Muted>
+        <View style={styles.headerRow}>
+          <View style={styles.headerText}>
+            <Title>This Day</Title>
+            <Muted style={styles.subtitle}>Private. Calm. Timeless.</Muted>
+          </View>
+
+          <Pressable
+            onPress={loadData}
+            disabled={loading}
+            style={({ pressed }) => [
+              styles.refreshBtn,
+              pressed && { opacity: 0.6 },
+              loading && { opacity: 0.4 },
+            ]}
+          >
+            <Ionicons name="refresh" size={30} color={Colors.dark.textMuted} />
+          </Pressable>
         </View>
 
         <View style={styles.stack}>
@@ -151,7 +160,6 @@ export default function TodayScreen() {
           {!loading && (
             <>
               {today ? renderCard(today, "Today") : renderEmpty("Today")}
-
               {previous
                 ? renderCard(previous, "From Your Past", true)
                 : renderEmpty("From Your Past")}
@@ -185,14 +193,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
 
-  header: {
+  headerRow: {
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 28,
+  },
+
+  headerText: {
+    alignItems: "center",
+    flex: 1,
   },
 
   subtitle: {
     marginTop: 4,
     opacity: 0.85,
+  },
+
+  refreshBtn: {
+    position: "absolute",
+    right: 0,
+    padding: 8,
+    borderRadius: 20,
   },
 
   stack: {
@@ -242,8 +264,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     opacity: 0.9,
   },
-
-  /* ===== FAB ===== */
 
   fabOuter: {
     position: "absolute",

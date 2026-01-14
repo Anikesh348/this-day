@@ -23,9 +23,9 @@ public class MediaService {
             RoutingContext ctx
     ) {
         immichClient.streamAsset(
+                ctx,
                 assetId,
-                type,
-                ctx.response()
+                type
         );
     }
 }
