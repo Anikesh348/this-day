@@ -31,66 +31,75 @@ function getTodayISTString() {
   return ist.toISOString().split("T")[0];
 }
 
+/**
+ * 🔧 Helper: previous month
+ */
+function getPreviousMonth(year: number, month: number) {
+  if (month === 1) return { year: year - 1, month: 12 };
+  return { year, month: month - 1 };
+}
+
 export default function CalendarScreen() {
   const router = useRouter();
 
   const [entries, setEntries] = useState<Record<string, any>>({});
   const loadedMonths = useRef<Set<string>>(new Set());
-
   const monthLoadTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const todayString = getTodayISTString();
   const currentMonth = todayString.substring(0, 7) + "-01";
 
   /**
-   * Load a month safely without causing scroll jumps
+   * 🧠 Load month exactly once (layout-safe)
    */
-  const loadMonth = async (year: number, month: number) => {
+  const loadMonth = useCallback(async (year: number, month: number) => {
     const key = `${year}-${month}`;
     if (loadedMonths.current.has(key)) return;
 
+    // 🔒 Lock immediately → prevents bounce
     loadedMonths.current.add(key);
 
     try {
       const res = await getCalendar(year, month);
+      if (!res?.data?.length) return;
+
       const map: Record<string, any> = {};
-
-      res.data.forEach((d: any) => {
+      for (const d of res.data) {
         map[d.date] = d;
-      });
+      }
 
+      // 🔑 Stable merge (no re-layout)
       setEntries((prev) => ({ ...prev, ...map }));
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
   /**
-   * 🔥 Reset calendar state when screen regains focus
+   * 🔥 Preload current + previous month
    */
   useFocusEffect(
     useCallback(() => {
-      loadedMonths.current.clear();
-      setEntries({});
+      const [year, month] = todayString.split("-").map(Number);
+      const prev = getPreviousMonth(year, month);
 
-      const [y, m] = todayString.split("-").map(Number);
-      loadMonth(y, m);
+      loadMonth(year, month);
+      loadMonth(prev.year, prev.month);
 
       return () => {
         if (monthLoadTimeout.current) {
           clearTimeout(monthLoadTimeout.current);
         }
       };
-    }, [todayString])
+    }, [todayString, loadMonth])
   );
 
   /**
-   * ✅ Memoized day renderer (prevents re-render storms)
+   * ✅ Frozen day renderer (no layout changes ever)
    */
   const renderDay = useCallback(
     ({ date, state }: any) => {
       const entry = entries[date.dateString];
-
       const hasEntry = !!entry?.immichAssetId;
       const assetId = entry?.immichAssetId;
 
@@ -121,32 +130,35 @@ export default function CalendarScreen() {
               styles.visualContainer,
               isToday && styles.todayOutline,
               isFuture && styles.futureDay,
-              isDisabled && { opacity: 0.1 },
+              isDisabled && { opacity: 0.15 },
             ]}
           >
-            {hasEntry ? (
-              <Image
-                source={{
-                  uri: `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${assetId}?type=thumbnail`,
-                }}
-                style={styles.dayImage}
-              />
-            ) : (
-              !isFuture &&
-              !isToday &&
-              !isDisabled && (
-                <View style={styles.crossContainer}>
-                  <View style={styles.crossLine} />
-                  <View
-                    style={[
-                      styles.crossLine,
-                      { transform: [{ rotate: "-45deg" }] },
-                    ]}
-                  />
-                </View>
-              )
+            {/* 🔒 Image layer ALWAYS mounted */}
+            <Image
+              source={
+                hasEntry
+                  ? {
+                      uri: `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${assetId}?type=thumbnail`,
+                    }
+                  : undefined
+              }
+              style={[styles.dayImage, { opacity: hasEntry ? 1 : 0 }]}
+            />
+
+            {/* ❌ No-entry cross */}
+            {!hasEntry && !isFuture && !isToday && !isDisabled && (
+              <View style={styles.crossContainer}>
+                <View style={styles.crossLine} />
+                <View
+                  style={[
+                    styles.crossLine,
+                    { transform: [{ rotate: "-45deg" }] },
+                  ]}
+                />
+              </View>
             )}
 
+            {/* 📅 Date badge */}
             <View
               style={[
                 styles.dateBadge,
@@ -173,7 +185,8 @@ export default function CalendarScreen() {
         futureScrollRange={0}
         showScrollIndicator={false}
         calendarWidth={SCREEN_WIDTH}
-        calendarHeight={SCREEN_WIDTH * 1.15} // 🔒 layout stability
+        calendarHeight={SCREEN_WIDTH * 1.2} // 🔒 harder lock
+        removeClippedSubviews={false} // 🔑 no recycling bounce
         contentContainerStyle={{ paddingBottom: 100 }}
         onVisibleMonthsChange={(months) => {
           if (monthLoadTimeout.current) {
@@ -182,7 +195,7 @@ export default function CalendarScreen() {
 
           monthLoadTimeout.current = setTimeout(() => {
             months.forEach((m) => loadMonth(m.year, m.month));
-          }, 120); // 🧠 debounce prevents jump
+          }, 180); // 🧠 stronger debounce
         }}
         theme={
           {
@@ -231,28 +244,31 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: "hidden",
     backgroundColor: "#161616",
-    justifyContent: "center",
-    alignItems: "center",
+    position: "relative",
+
+    // 🔒 Border ALWAYS present
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  todayOutline: {
+    borderColor: Colors.dark.accent,
   },
   dayImage: {
-    width: "100%",
-    height: "100%",
     position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   futureDay: {
     backgroundColor: "transparent",
-    borderWidth: 1,
     borderColor: "#222",
-  },
-  todayOutline: {
-    borderWidth: 2,
-    borderColor: Colors.dark.accent,
   },
   dateBadge: {
     position: "absolute",
     top: 5,
     left: 5,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0,0,0,0.5)",
     paddingHorizontal: 5,
     borderRadius: 5,
     minWidth: 18,
@@ -267,6 +283,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   crossContainer: {
+    position: "absolute",
     width: 14,
     height: 14,
     opacity: 0.15,

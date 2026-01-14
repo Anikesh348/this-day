@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { ResizeMode, Video } from "expo-av";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -13,6 +14,7 @@ import {
   Text,
   TextInput,
   View,
+  Platform,
 } from "react-native";
 
 import { Screen } from "@/components/Screen";
@@ -39,6 +41,9 @@ export default function AddEntryScreen() {
     date ?? new Date().toISOString().slice(0, 10)
   );
 
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [tempDate, setTempDate] = useState<Date | null>(null);
+
   const [caption, setCaption] = useState("");
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -57,6 +62,7 @@ export default function AddEntryScreen() {
       setPastDateString(date ?? new Date().toISOString().slice(0, 10));
       setShowSuccess(false);
       setCountdown(3);
+      setTempDate(null);
     }, [date])
   );
 
@@ -121,15 +127,12 @@ export default function AddEntryScreen() {
     );
   };
 
-  /**
-   * OPTIMISTIC SUBMIT + FIXED VIDEO UPLOAD
-   */
   const submit = () => {
     if (submitting) return;
 
     setSubmitting(true);
     setCountdown(3);
-    setShowSuccess(true); // optimistic UI
+    setShowSuccess(true);
 
     const files = media.map((m) => {
       let mime = "image/jpeg";
@@ -137,25 +140,12 @@ export default function AddEntryScreen() {
 
       if (m.type === "video") {
         mime = m.mimeType ?? "video/mp4";
-
-        if (!name) {
-          const ext = mime.includes("quicktime")
-            ? "mov"
-            : mime.includes("webm")
-            ? "webm"
-            : "mp4";
-
-          name = `video-${Date.now()}.${ext}`;
-        }
+        name = name ?? `video-${Date.now()}.mp4`;
       } else {
         name = name ?? `image-${Date.now()}.jpg`;
       }
 
-      return {
-        uri: m.uri,
-        name,
-        type: mime,
-      };
+      return { uri: m.uri, name, type: mime };
     });
 
     (async () => {
@@ -212,14 +202,63 @@ export default function AddEntryScreen() {
         )}
 
         {(forcedBackfill || entryMode === "past") && (
-          <View style={styles.dateRow}>
-            <Ionicons
-              name="calendar-outline"
-              size={18}
-              color={Colors.dark.textMuted}
-            />
-            <Body>{new Date(`${displayDate}T00:00:00`).toDateString()}</Body>
-          </View>
+          <>
+            <Pressable
+              style={styles.dateRow}
+              onPress={() => {
+                if (forcedBackfill) return;
+                setTempDate(new Date(`${pastDateString}T00:00:00`));
+                setShowDatePicker(true);
+              }}
+            >
+              <Ionicons
+                name="calendar-outline"
+                size={18}
+                color={Colors.dark.textMuted}
+              />
+              <Body>{new Date(`${displayDate}T00:00:00`).toDateString()}</Body>
+            </Pressable>
+
+            {/* Date Picker Modal with Tick */}
+            <Modal transparent visible={showDatePicker} animationType="fade">
+              <View style={styles.pickerOverlay}>
+                <View style={styles.pickerCard}>
+                  <DateTimePicker
+                    value={tempDate ?? new Date()}
+                    mode="date"
+                    display={Platform.OS === "ios" ? "spinner" : "default"}
+                    maximumDate={new Date()}
+                    onChange={(_, d) => d && setTempDate(d)}
+                  />
+
+                  <View style={styles.pickerActions}>
+                    <Pressable onPress={() => setShowDatePicker(false)}>
+                      <Body style={{ color: Colors.dark.textMuted }}>
+                        Cancel
+                      </Body>
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => {
+                        if (tempDate) {
+                          setPastDateString(
+                            tempDate.toISOString().slice(0, 10)
+                          );
+                        }
+                        setShowDatePicker(false);
+                      }}
+                    >
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={28}
+                        color="#6C8CFF"
+                      />
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            </Modal>
+          </>
         )}
 
         <TextInput
@@ -286,18 +325,22 @@ export default function AddEntryScreen() {
           <Body style={{ color: "white" }}>Save Entry</Body>
         </Pressable>
       </ScrollView>
-
-      <Modal visible={showSuccess} transparent animationType="fade">
+      {/* Success Popup */}
+      <Modal
+        visible={showSuccess}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+      >
         <View style={styles.successOverlay}>
           <View style={styles.successCard}>
-            <Ionicons name="cloud-done-outline" size={28} color="#6C8CFF" />
-            <Text style={styles.successTitle}>Entry saved</Text>
-            <Text style={styles.successText}>
-              This entry will sync to the cloud shortly.
-            </Text>
-            <Text style={styles.countdownText}>
-              Redirecting in {countdown}s
-            </Text>
+            <Ionicons name="checkmark-circle" size={64} color="#6C8CFF" />
+
+            <Title style={{ marginTop: 16 }}>
+              Your entry will be securely synced to the cloud.
+            </Title>
+
+            <Muted style={{ marginTop: 8 }}>Redirecting in {countdown}s…</Muted>
           </View>
         </View>
       </Modal>
@@ -306,9 +349,10 @@ export default function AddEntryScreen() {
 }
 
 const styles = StyleSheet.create({
-  topBar: { paddingHorizontal: 16, paddingTop: 8 },
+  topBar: { paddingHorizontal: 16, paddingTop: 32 },
   scroll: { padding: 24, paddingBottom: 140 },
   subtitle: { marginBottom: 20 },
+
   toggle: {
     flexDirection: "row",
     backgroundColor: "#1F2328",
@@ -318,6 +362,7 @@ const styles = StyleSheet.create({
   },
   toggleBtn: { flex: 1, paddingVertical: 10, alignItems: "center" },
   toggleActive: { backgroundColor: "#2C3440", borderRadius: 16 },
+
   dateRow: {
     flexDirection: "row",
     gap: 10,
@@ -326,6 +371,26 @@ const styles = StyleSheet.create({
     backgroundColor: "#1F2328",
     marginBottom: 16,
   },
+
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  pickerCard: {
+    backgroundColor: "#1F2328",
+    borderRadius: 22,
+    padding: 16,
+    width: "90%",
+  },
+  pickerActions: {
+    marginTop: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+
   editor: {
     minHeight: 180,
     padding: 18,
@@ -334,6 +399,7 @@ const styles = StyleSheet.create({
     color: Colors.dark.textPrimary,
     fontSize: 18,
   },
+
   mediaStrip: {
     marginTop: 16,
     flexDirection: "row",
@@ -361,6 +427,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 4,
   },
+
   actionRow: { marginTop: 20, flexDirection: "row", gap: 14 },
   iconBtn: {
     width: 56,
@@ -379,32 +446,17 @@ const styles = StyleSheet.create({
   },
   successOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.65)",
     alignItems: "center",
+    justifyContent: "center",
   },
+
   successCard: {
     backgroundColor: "#1F2328",
-    padding: 24,
-    borderRadius: 22,
+    borderRadius: 28,
+    paddingVertical: 32,
+    paddingHorizontal: 28,
     alignItems: "center",
     width: "80%",
-  },
-  successTitle: {
-    color: Colors.dark.textPrimary,
-    fontSize: 18,
-    fontWeight: "600",
-    marginTop: 10,
-  },
-  successText: {
-    color: Colors.dark.textMuted,
-    fontSize: 14,
-    textAlign: "center",
-    marginTop: 6,
-  },
-  countdownText: {
-    color: "#8AA4FF",
-    fontSize: 13,
-    marginTop: 12,
   },
 });
