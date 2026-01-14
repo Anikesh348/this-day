@@ -74,26 +74,33 @@ public class ImmichClient {
         HttpServerRequest request = ctx.request();
         HttpServerResponse response = ctx.response();
 
+        // ✅ Handle HEAD requests (return headers only, no body)
+        boolean isHeadRequest = "HEAD".equalsIgnoreCase(request.method().name());
+
         String endpoint = "thumbnail".equalsIgnoreCase(type)
                 ? "/api/assets/" + assetId + "/thumbnail"
                 : "/api/assets/" + assetId + "/original";
         String url = baseUrl + endpoint;
 
-        log.info("Streaming Immich asset assetId={} type={}", assetId, type);
+        log.info("Streaming Immich asset assetId={} type={} method={}", assetId, type, request.method());
 
         HttpRequest<Buffer> immichReq = client
                 .getAbs(url)
                 .putHeader("x-api-key", apiKey);
 
-        // Forward Range header (still useful for video seeking)
+        // ✅ Use HEAD method if client sent HEAD
+        if (isHeadRequest) {
+            immichReq = client.headAbs(url).putHeader("x-api-key", apiKey);
+        }
+
         String range = request.getHeader("Range");
-        if (range != null) {
+        if (range != null && !isHeadRequest) {
             immichReq.putHeader("Range", range);
         }
 
         immichReq.send(ar -> {
             if (ar.failed()) {
-                log.error("Immich stream request failed", ar.cause());
+                log.error("Immich request failed for assetId={}", assetId, ar.cause());
                 if (!response.ended()) {
                     response.setStatusCode(502).end();
                 }
@@ -101,15 +108,32 @@ public class ImmichClient {
             }
 
             HttpResponse<Buffer> immichResp = ar.result();
+            int statusCode = immichResp.statusCode();
 
-            // Set status + headers
-            response.setStatusCode(immichResp.statusCode());
+            if (statusCode != 200 && statusCode != 206) {
+                log.error("Immich returned error status: {}", statusCode);
+                if (!response.ended()) {
+                    response.setStatusCode(statusCode).end();
+                }
+                return;
+            }
+
+            // Set status
+            response.setStatusCode(statusCode);
+
+            // Copy headers
             copyHeader(immichResp, response, "Content-Type");
             copyHeader(immichResp, response, "Content-Length");
             copyHeader(immichResp, response, "Content-Range");
-            copyHeader(immichResp, response, "Accept-Ranges");
 
-            // ✅ THE FIX: Prevent download, enable inline playback
+            String acceptRanges = immichResp.getHeader("Accept-Ranges");
+            if (acceptRanges != null) {
+                response.putHeader("Accept-Ranges", acceptRanges);
+            } else {
+                response.putHeader("Accept-Ranges", "bytes");
+            }
+
+            // ✅ CRITICAL: Force inline
             response.putHeader("Content-Disposition", "inline");
 
             // Cache headers
@@ -119,8 +143,25 @@ public class ImmichClient {
                 response.putHeader("Cache-Control", "public, max-age=31536000, immutable");
             }
 
-            // Write body
-            response.end(immichResp.body());
+            // CORS
+            response.putHeader("Access-Control-Allow-Origin", "*");
+            response.putHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+            response.putHeader("Access-Control-Allow-Headers", "Range, Content-Type");
+            response.putHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges");
+
+            // ✅ For HEAD requests, only send headers (no body)
+            if (isHeadRequest) {
+                response.end();
+                return;
+            }
+
+            // Send body for GET requests
+            Buffer body = immichResp.body();
+            if (body != null && body.length() > 0) {
+                response.end(body);
+            } else {
+                response.end();
+            }
         });
     }
 
