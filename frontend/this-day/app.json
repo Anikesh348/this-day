@@ -6,13 +6,25 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+
+    "updates": {
+      "enabled": true,
+      "fallbackToCacheTimeout": 0
+    },
+
+    "assetBundlePatterns": [
+      "assets/**"
+    ],
+
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.anikesh348.thisday"
     },
+
     "android": {
       "package": "com.anikesh348.thisday"
     },
+
     "plugins": [
       "@react-native-community/datetimepicker"
     ]
