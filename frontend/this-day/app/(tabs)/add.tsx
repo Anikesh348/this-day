@@ -45,6 +45,7 @@ export default function AddEntryScreen() {
 
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [tempDate, setTempDate] = useState<Date | null>(null);
+  const [isEditorFocused, setIsEditorFocused] = useState(false);
 
   const [caption, setCaption] = useState("");
   const [editorHeight, setEditorHeight] = useState(56);
@@ -57,6 +58,20 @@ export default function AddEntryScreen() {
 
   const isBackfill = forcedBackfill || entryMode === "past";
   const displayDate = forcedBackfill ? date! : pastDateString;
+
+  const getMimeType = (m: ImagePicker.ImagePickerAsset) => {
+    if (m.mimeType) return m.mimeType;
+
+    if (m.type === "video") return "video/mp4";
+    return "image/jpeg";
+  };
+
+  const getFileName = (m: ImagePicker.ImagePickerAsset) => {
+    if (m.fileName) return m.fileName;
+
+    const ext = m.type === "video" ? "mp4" : "jpg";
+    return `file-${Date.now()}.${ext}`;
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -149,8 +164,8 @@ export default function AddEntryScreen() {
 
     const files = media.map((m) => ({
       uri: m.uri,
-      name: m.fileName ?? `file-${Date.now()}`,
-      type: m.mimeType ?? "image/jpeg",
+      name: getFileName(m),
+      type: getMimeType(m),
     }));
 
     try {
@@ -254,7 +269,16 @@ export default function AddEntryScreen() {
                     style={styles.media}
                     resizeMode={ResizeMode.COVER}
                     useNativeControls
-                    onLoad={() => markLoaded(m.uri)}
+                    onLoad={
+                      Platform.OS !== "web"
+                        ? () => markLoaded(m.uri)
+                        : undefined
+                    }
+                    onReadyForDisplay={
+                      Platform.OS === "web"
+                        ? () => markLoaded(m.uri)
+                        : undefined
+                    }
                   />
                 ) : (
                   <Image
@@ -297,9 +321,18 @@ export default function AddEntryScreen() {
             value={caption}
             onChangeText={setCaption}
             placeholder="What's new?"
-            placeholderTextColor="#666"
-            onContentSizeChange={(e) => setEditorHeight(150)}
-            style={[styles.editor, { height: editorHeight }]}
+            placeholderTextColor={Platform.OS === "web" ? "#8A8F98" : "#666"}
+            onFocus={() => setIsEditorFocused(true)}
+            onBlur={() => setIsEditorFocused(false)}
+            onContentSizeChange={() => setEditorHeight(150)}
+            style={[
+              styles.editor,
+              { height: editorHeight },
+              Platform.OS === "web" && styles.editorWeb,
+              Platform.OS === "web" &&
+                isEditorFocused &&
+                styles.editorWebFocused,
+            ]}
           />
         </View>
       </KeyboardAvoidingView>
@@ -363,7 +396,7 @@ export default function AddEntryScreen() {
 
 const styles = StyleSheet.create({
   header: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 6,
     paddingTop: 36,
     paddingBottom: 16,
     flexDirection: "row",
@@ -426,6 +459,18 @@ const styles = StyleSheet.create({
     height: "100%",
   },
 
+  editorWeb: {
+    borderWidth: 1,
+    borderColor: "#2C3440",
+    borderRadius: 14,
+    padding: 12,
+  },
+
+  editorWebFocused: {
+    borderColor: "#6C8CFF",
+    backgroundColor: "#0F1115",
+  },
+
   mediaLoader: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.6)",
@@ -447,6 +492,7 @@ const styles = StyleSheet.create({
 
   composer: { paddingHorizontal: 16, paddingVertical: 10 },
   editor: { fontSize: 20, color: "white" },
+
   pickerOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
@@ -464,6 +510,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
   },
+
   successOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
