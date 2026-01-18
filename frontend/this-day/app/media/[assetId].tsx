@@ -8,12 +8,12 @@ import {
   StyleSheet,
   View,
   Text,
-  Alert,
   Animated,
 } from "react-native";
 import { Video, ResizeMode, AVPlaybackStatus } from "expo-av";
 import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
+import { LinearGradient } from "expo-linear-gradient";
 import { Screen } from "@/components/Screen";
 import { useEffect, useRef, useState } from "react";
 import { StatusBar } from "expo-status-bar";
@@ -26,7 +26,6 @@ function getWritableDir(): string | null {
     documentDirectory?: string;
     cacheDirectory?: string;
   };
-
   return fs.documentDirectory ?? fs.cacheDirectory ?? null;
 }
 
@@ -34,14 +33,19 @@ type MediaKind = "image" | "video";
 
 export default function MediaViewerScreen() {
   const router = useRouter();
-  const { assetId } = useLocalSearchParams<{ assetId: string }>();
+  const { assetId, caption } = useLocalSearchParams<{
+    assetId: string;
+    caption: string;
+  }>();
 
   if (!assetId) return null;
 
   const mediaUrl = `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${assetId}?type=full`;
 
   const videoRef = useRef<Video>(null);
+
   const controlsOpacity = useRef(new Animated.Value(1)).current;
+  const imageOpacity = useRef(new Animated.Value(0)).current;
 
   const [mediaType, setMediaType] = useState<MediaKind | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,7 +56,7 @@ export default function MediaViewerScreen() {
   const [localVideoUri, setLocalVideoUri] = useState<string | null>(null);
 
   /* =========================================================
-   * Detect media type (video vs image)
+   * Detect media type
    * ======================================================= */
   useEffect(() => {
     let cancelled = false;
@@ -62,10 +66,9 @@ export default function MediaViewerScreen() {
         const res = await fetch(mediaUrl, {
           headers: { Range: "bytes=0-1" },
         });
-
-        const contentType = res.headers.get("content-type") ?? "";
+        const type = res.headers.get("content-type") ?? "";
         if (!cancelled) {
-          setMediaType(contentType.startsWith("video/") ? "video" : "image");
+          setMediaType(type.startsWith("video/") ? "video" : "image");
         }
       } catch {
         if (!cancelled) setMediaType("image");
@@ -78,7 +81,7 @@ export default function MediaViewerScreen() {
   }, [assetId]);
 
   /* =========================================================
-   * Optional video preload (skip if not available)
+   * Optional video preload
    * ======================================================= */
   useEffect(() => {
     if (mediaType !== "video" || Platform.OS === "web") {
@@ -88,7 +91,6 @@ export default function MediaViewerScreen() {
 
     const dir = getWritableDir();
     if (!dir) {
-      // Expo Go → stream directly
       setLoading(false);
       return;
     }
@@ -99,11 +101,9 @@ export default function MediaViewerScreen() {
       try {
         const fileUri = `${dir}${assetId}.mp4`;
         const info = await FileSystem.getInfoAsync(fileUri);
-
         if (!info.exists) {
           await FileSystem.downloadAsync(mediaUrl, fileUri);
         }
-
         if (!cancelled) {
           setLocalVideoUri(fileUri);
           setLoading(false);
@@ -119,19 +119,39 @@ export default function MediaViewerScreen() {
   }, [mediaType, assetId]);
 
   /* =========================================================
-   * Video playback state
+   * Playback state (iOS replay fix included)
    * ======================================================= */
   const onPlaybackStatus = (status: AVPlaybackStatus) => {
     if (!status.isLoaded) return;
+
     setIsPlaying(status.isPlaying);
+
+    // ✅ iOS fix: rewind after finish so it can play again
+    if (status.didJustFinish && !status.isLooping) {
+      videoRef.current?.setPositionAsync(0);
+    }
   };
 
+  /* =========================================================
+   * Controls toggle
+   * ======================================================= */
   const toggleControls = () => {
     Animated.timing(controlsOpacity, {
       toValue: controlsVisible ? 0 : 1,
-      duration: 200,
+      duration: 180,
       useNativeDriver: true,
     }).start(() => setControlsVisible(!controlsVisible));
+  };
+
+  /* =========================================================
+   * Image fade-in
+   * ======================================================= */
+  const onImageLoad = () => {
+    Animated.timing(imageOpacity, {
+      toValue: 1,
+      duration: 250,
+      useNativeDriver: true,
+    }).start();
   };
 
   /* =========================================================
@@ -168,6 +188,12 @@ export default function MediaViewerScreen() {
     <Screen>
       <StatusBar style="light" hidden={!controlsVisible} />
       <View style={styles.container}>
+        {/* Top gradient */}
+        <LinearGradient
+          colors={["rgba(0,0,0,0.7)", "transparent"]}
+          style={styles.topGradient}
+        />
+
         {/* Top bar */}
         <Animated.View style={[styles.topBar, { opacity: controlsOpacity }]}>
           <IconButton icon="close" onPress={() => router.back()} />
@@ -181,11 +207,14 @@ export default function MediaViewerScreen() {
         {/* Media */}
         <Pressable style={styles.mediaContainer} onPress={toggleControls}>
           {mediaType === "image" && (
-            <Image
+            <Animated.Image
               source={{ uri: mediaUrl }}
-              style={styles.media}
+              style={[styles.media, { opacity: imageOpacity }]}
               resizeMode="contain"
-              onLoadEnd={() => setLoading(false)}
+              onLoadEnd={() => {
+                setLoading(false);
+                onImageLoad();
+              }}
               onError={() => setError(true)}
             />
           )}
@@ -200,7 +229,7 @@ export default function MediaViewerScreen() {
                 style={styles.media}
                 resizeMode={ResizeMode.CONTAIN}
                 shouldPlay
-                useNativeControls // ✅ REQUIRED FOR EXPO GO
+                useNativeControls
                 onPlaybackStatusUpdate={onPlaybackStatus}
               />
             ))}
@@ -209,12 +238,20 @@ export default function MediaViewerScreen() {
           {error && <Text style={styles.errorText}>Failed to load media</Text>}
         </Pressable>
 
-        {/* Play icon only when paused */}
-        {mediaType === "video" && !isPlaying && (
-          <View style={styles.bottomControls}>
-            <Ionicons name="play" size={36} color="white" />
+        {/* Bottom gradient + meta */}
+        <LinearGradient
+          colors={["transparent", "rgba(0,0,0,0.75)"]}
+          style={styles.bottomGradient}
+        >
+          <Text style={styles.metaText}>{caption}</Text>
+        </LinearGradient>
+
+        {/* Play overlay */}
+        {/* {mediaType === "video" && !isPlaying && (
+          <View style={styles.playOverlay}>
+            <Ionicons name="play" size={44} color="white" />
           </View>
-        )}
+        )} */}
       </View>
     </Screen>
   );
@@ -248,14 +285,27 @@ function IconButton({
  * ======================================================= */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
+
   mediaContainer: { flex: 1, justifyContent: "center" },
+
   media: { width: "100%", height: "100%" },
+
   webVideo: {
     width: "100%",
     height: "100%",
     objectFit: "contain",
     backgroundColor: "black",
   },
+
+  topGradient: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 140,
+    zIndex: 5,
+  },
+
   topBar: {
     position: "absolute",
     top: Platform.OS === "ios" ? 60 : 16,
@@ -265,6 +315,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
   },
+
   iconButton: {
     width: 44,
     height: 44,
@@ -273,11 +324,30 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  bottomControls: {
+
+  bottomGradient: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 160,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    justifyContent: "flex-end",
+  },
+
+  metaText: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 14,
+    letterSpacing: 0.4,
+  },
+
+  playOverlay: {
     position: "absolute",
     alignSelf: "center",
-    bottom: 60,
+    top: "45%",
   },
+
   errorText: {
     color: "#aaa",
     textAlign: "center",

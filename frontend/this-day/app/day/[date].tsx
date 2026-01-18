@@ -59,12 +59,11 @@ export default function DayViewScreen() {
   useFocusEffect(
     useCallback(() => {
       loadData();
-    }, [date])
+    }, [date]),
   );
 
   const handleBack = () => {
-    if (router.canGoBack()) router.back();
-    else router.replace(from === "calendar" ? "/calendar" : "/today");
+    router.replace(from === "calendar" ? "/calendar" : "/today");
   };
 
   return (
@@ -159,7 +158,7 @@ export default function DayViewScreen() {
                         onPress={() =>
                           router.push({
                             pathname: "media/[assetId]",
-                            params: { assetId },
+                            params: { assetId, caption: entry?.caption },
                           })
                         }
                       >
@@ -217,7 +216,7 @@ export default function DayViewScreen() {
         onPress={() =>
           router.push({
             pathname: "/add",
-            params: { mode: "backfill", date },
+            params: { mode: "backfill", date, from: "day" },
           })
         }
       >
@@ -233,7 +232,7 @@ const styles = StyleSheet.create({
   scroll: {
     paddingTop: 36,
     paddingBottom: 120,
-    paddingHorizontal: 16,
+    paddingHorizontal: 6,
   },
 
   header: {
@@ -270,7 +269,7 @@ const styles = StyleSheet.create({
 
   stack: {
     width: "100%",
-    maxWidth: 420,
+    maxWidth: 500,
     alignSelf: "center",
     gap: 22,
   },
