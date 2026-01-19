@@ -73,6 +73,12 @@ export default function AddEntryScreen() {
     return `file-${Date.now()}.${ext}`;
   };
 
+  function toISTDateString(date: Date) {
+    const ist = new Date(date.getTime() + (5 * 60 + 30) * 60 * 1000);
+
+    return ist.toISOString().slice(0, 10); // YYYY-MM-DD
+  }
+
   useFocusEffect(
     useCallback(() => {
       setCaption("");
@@ -357,7 +363,14 @@ export default function AddEntryScreen() {
                 mode="date"
                 display={Platform.OS === "ios" ? "spinner" : "default"}
                 maximumDate={new Date()}
-                onChange={(_, d) => d && setTempDate(d)}
+                onChange={(_, d) => {
+                  if (!d) return;
+
+                  const istDateString = toISTDateString(d);
+
+                  setTempDate(d); // only for picker UI
+                  setPastDateString(istDateString); // source of truth ✅
+                }}
               />
             )}
 
