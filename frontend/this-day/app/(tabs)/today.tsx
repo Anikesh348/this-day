@@ -63,7 +63,7 @@ export default function TodayScreen() {
   useFocusEffect(
     useCallback(() => {
       loadData();
-    }, [])
+    }, []),
   );
 
   const openDay = (date: string) => {
@@ -190,7 +190,7 @@ const styles = StyleSheet.create({
   scroll: {
     paddingTop: 40,
     paddingBottom: 120,
-    paddingHorizontal: 16,
+    paddingHorizontal: 6,
   },
 
   headerRow: {
@@ -219,7 +219,7 @@ const styles = StyleSheet.create({
 
   stack: {
     width: "100%",
-    maxWidth: 420,
+    maxWidth: 480,
     alignSelf: "center",
     gap: 22,
   },
