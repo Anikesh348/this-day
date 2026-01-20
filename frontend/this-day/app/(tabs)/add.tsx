@@ -330,7 +330,7 @@ export default function AddEntryScreen() {
             placeholderTextColor={Platform.OS === "web" ? "#8A8F98" : "#666"}
             onFocus={() => setIsEditorFocused(true)}
             onBlur={() => setIsEditorFocused(false)}
-            onContentSizeChange={() => setEditorHeight(150)}
+            onContentSizeChange={() => setEditorHeight(70)}
             style={[
               styles.editor,
               { height: editorHeight },
@@ -365,11 +365,9 @@ export default function AddEntryScreen() {
                 maximumDate={new Date()}
                 onChange={(_, d) => {
                   if (!d) return;
-
                   const istDateString = toISTDateString(d);
-
-                  setTempDate(d); // only for picker UI
-                  setPastDateString(istDateString); // source of truth ✅
+                  setTempDate(d);
+                  setPastDateString(istDateString);
                 }}
               />
             )}
@@ -380,10 +378,7 @@ export default function AddEntryScreen() {
               </Pressable>
               <Pressable
                 onPress={() => {
-                  if (tempDate) {
-                    setPastDateString(tempDate.toISOString().slice(0, 10));
-                  }
-                  setShowDatePicker(false);
+                  setShowDatePicker(false); // pastDateString already correct
                 }}
               >
                 <Ionicons name="checkmark-circle" size={28} color="#6C8CFF" />
@@ -450,7 +445,7 @@ const styles = StyleSheet.create({
   },
   mediaStripContainer: {
     height: 120, // ✅ fixed height
-    marginVertical: 12,
+    marginVertical: 0,
   },
 
   mediaStrip: {
@@ -503,7 +498,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  composer: { paddingHorizontal: 16, paddingVertical: 10 },
+  composer: { paddingHorizontal: 16, paddingVertical: 2 },
   editor: { fontSize: 20, color: "white" },
 
   pickerOverlay: {
