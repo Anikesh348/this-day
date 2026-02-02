@@ -19,7 +19,16 @@
       html,
       body {
         height: 100%;
+        width: 100%;
         background-color: #0B0B0B;
+      }
+      body {
+        overflow: hidden;
+        position: fixed;
+        inset: 0;
+        overscroll-behavior: none;
+        -webkit-overflow-scrolling: auto;
+        touch-action: manipulation;
       }
       /* These styles disable body scrolling if you are using <ScrollView> */
       body {
@@ -31,6 +40,7 @@
         height: 100%;
         flex: 1;
         background-color: #0B0B0B;
+        overflow: hidden;
       }
     </style>
   </head>

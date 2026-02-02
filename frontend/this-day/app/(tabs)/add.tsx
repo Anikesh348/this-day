@@ -40,7 +40,7 @@ export default function AddEntryScreen() {
 
   const [entryMode, setEntryMode] = useState<"today" | "past">("today");
   const [pastDateString, setPastDateString] = useState(
-    date ?? new Date().toISOString().slice(0, 10),
+    date ?? toISTDateString(new Date()),
   );
 
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -85,7 +85,7 @@ export default function AddEntryScreen() {
       setMedia([]);
       setSubmitting(false);
       setEntryMode("today");
-      setPastDateString(date ?? new Date().toISOString().slice(0, 10));
+      setPastDateString(date ?? toISTDateString(new Date()));
       setEditorHeight(140);
       setShowSuccess(false);
       setCountdown(3);
@@ -112,6 +112,7 @@ export default function AddEntryScreen() {
     const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
     return () => clearTimeout(t);
   }, [showSuccess, countdown]);
+
 
   const handleBack = () => {
     if (from === "day" && date) {
@@ -328,7 +329,9 @@ export default function AddEntryScreen() {
             onChangeText={setCaption}
             placeholder="What's new?"
             placeholderTextColor={Platform.OS === "web" ? "#8A8F98" : "#666"}
-            onFocus={() => setIsEditorFocused(true)}
+            onFocus={() => {
+              setIsEditorFocused(true);
+            }}
             onBlur={() => setIsEditorFocused(false)}
             onContentSizeChange={(e) =>
               setEditorHeight(Math.max(140, e.nativeEvent.contentSize.height))
