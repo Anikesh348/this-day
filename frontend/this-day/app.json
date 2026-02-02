@@ -12,13 +12,20 @@
       "fallbackToCacheTimeout": 0
     },
 
-    "assetBundlePatterns": [
-      "assets/**"
-    ],
+    "assetBundlePatterns": ["assets/**"],
+
+    "web": {
+      "display": "standalone",
+      "themeColor": "#0B0B0B",
+      "backgroundColor": "#0B0B0B"
+    },
 
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.anikesh348.thisday"
+      "bundleIdentifier": "com.anikesh348.thisday",
+      "infoPlist": {
+        "UIStatusBarStyle": "UIStatusBarStyleBlackTranslucent"
+      }
     },
 
     "android": {

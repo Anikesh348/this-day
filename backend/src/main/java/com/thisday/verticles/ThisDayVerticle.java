@@ -33,8 +33,17 @@ public class ThisDayVerticle extends AbstractVerticle {
 
         Router router = Router.router(vertx);
         router.route().handler(BodyHandler.create());
+        CorsHandler corsHandler = CorsHandler.create();
+        String[] allowedOrigins = AppConfig.CORS_ALLOWED_ORIGINS.split(",");
+        for (String origin : allowedOrigins) {
+            String trimmed = origin.trim();
+            if (!trimmed.isEmpty()) {
+                corsHandler.addOrigin(trimmed);
+            }
+        }
+
         router.route().handler(
-                CorsHandler.create()
+                corsHandler
                         .allowedMethod(HttpMethod.GET)
                         .allowedMethod(HttpMethod.POST)
                         .allowedMethod(HttpMethod.OPTIONS)
@@ -42,6 +51,10 @@ public class ThisDayVerticle extends AbstractVerticle {
                         .allowedMethod(HttpMethod.PUT)
                         .allowedHeader("Content-Type")
                         .allowedHeader("Authorization")
+                        .allowedHeader("Accept")
+                        .allowedHeader("Origin")
+                        .allowedHeader("Access-Control-Request-Method")
+                        .allowedHeader("Access-Control-Request-Headers")
         );
         log.debug("Router and BodyHandler initialized");
 

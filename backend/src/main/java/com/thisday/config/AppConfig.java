@@ -72,6 +72,10 @@ public class AppConfig {
     public static final String IMMICH_BASE_URL = require("IMMICH_BASE_URL");
     public static final String IMMICH_API_KEY = require("IMMICH_API_KEY");
 
+    public static final String CORS_ALLOWED_ORIGINS =
+            env("CORS_ALLOWED_ORIGINS",
+                    "https://thisdayui.hostingfrompurva.xyz,http://localhost:19006,http://localhost:3000");
+
     static {
         log.info("AppConfig initialization completed");
     }
