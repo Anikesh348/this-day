@@ -132,7 +132,10 @@ export default function AddEntryScreen() {
     if (!res.canceled) {
       setMedia((p) => [
         ...p,
-        ...res.assets.map((a) => ({ ...a, loading: true })),
+        ...res.assets.map((a) => ({
+          ...a,
+          loading: !(Platform.OS === "web" && a.type === "video"),
+        })),
       ]);
     }
   };
@@ -150,7 +153,10 @@ export default function AddEntryScreen() {
     if (!res.canceled) {
       setMedia((p) => [
         ...p,
-        ...res.assets.map((a) => ({ ...a, loading: true })),
+        ...res.assets.map((a) => ({
+          ...a,
+          loading: !(Platform.OS === "web" && a.type === "video"),
+        })),
       ]);
     }
   };
@@ -312,10 +318,7 @@ export default function AddEntryScreen() {
       )}
 
       {/* CAPTION */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={{ flex: 1 }}
-      >
+      <View style={{ flex: 1 }}>
         <View style={styles.composer}>
           <TextInput
             ref={inputRef}
@@ -340,7 +343,7 @@ export default function AddEntryScreen() {
             ]}
           />
         </View>
-      </KeyboardAvoidingView>
+      </View>
 
       {/* DATE PICKER */}
       <Modal transparent visible={showDatePicker} animationType="fade">
