@@ -48,7 +48,7 @@ export default function AddEntryScreen() {
   const [isEditorFocused, setIsEditorFocused] = useState(false);
 
   const [caption, setCaption] = useState("");
-  const [editorHeight, setEditorHeight] = useState(56);
+  const [editorHeight, setEditorHeight] = useState(140);
 
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -86,12 +86,17 @@ export default function AddEntryScreen() {
       setSubmitting(false);
       setEntryMode("today");
       setPastDateString(date ?? new Date().toISOString().slice(0, 10));
-      setEditorHeight(56);
+      setEditorHeight(140);
       setShowSuccess(false);
       setCountdown(3);
       setTempDate(null);
 
       requestAnimationFrame(() => inputRef.current?.focus());
+
+      return () => {
+        inputRef.current?.blur();
+        Keyboard.dismiss();
+      };
     }, [date]),
   );
 
@@ -275,16 +280,8 @@ export default function AddEntryScreen() {
                     style={styles.media}
                     resizeMode={ResizeMode.COVER}
                     useNativeControls
-                    onLoad={
-                      Platform.OS !== "web"
-                        ? () => markLoaded(m.uri)
-                        : undefined
-                    }
-                    onReadyForDisplay={
-                      Platform.OS === "web"
-                        ? () => markLoaded(m.uri)
-                        : undefined
-                    }
+                    onLoad={() => markLoaded(m.uri)}
+                    onReadyForDisplay={() => markLoaded(m.uri)}
                   />
                 ) : (
                   <Image
@@ -330,7 +327,9 @@ export default function AddEntryScreen() {
             placeholderTextColor={Platform.OS === "web" ? "#8A8F98" : "#666"}
             onFocus={() => setIsEditorFocused(true)}
             onBlur={() => setIsEditorFocused(false)}
-            onContentSizeChange={() => setEditorHeight(70)}
+            onContentSizeChange={(e) =>
+              setEditorHeight(Math.max(140, e.nativeEvent.contentSize.height))
+            }
             style={[
               styles.editor,
               { height: editorHeight },
