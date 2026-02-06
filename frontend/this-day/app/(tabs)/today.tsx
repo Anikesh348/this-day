@@ -11,6 +11,7 @@ import {
   getSameDaySummary,
 } from "@/services/entries";
 import { Colors } from "@/theme/colors";
+import { apiUrl } from "@/services/apiBase";
 
 interface Entry {
   _id: string;
@@ -101,7 +102,7 @@ export default function TodayScreen() {
         {assetId && (
           <Image
             source={{
-              uri: `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${assetId}?type=thumbnail`,
+              uri: apiUrl(`/api/media/immich/${assetId}?type=thumbnail`),
             }}
             style={styles.image}
           />

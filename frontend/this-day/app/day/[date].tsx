@@ -16,6 +16,7 @@ import { Screen } from "@/components/Screen";
 import { Body, Muted, Title } from "@/components/Text";
 import { deleteEntry, getDayEntries } from "@/services/entries";
 import { Colors } from "@/theme/colors";
+import { apiUrl } from "@/services/apiBase";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 const GRID_GAP = 8;
@@ -158,13 +159,19 @@ export default function DayViewScreen() {
                         onPress={() =>
                           router.push({
                             pathname: "media/[assetId]",
-                            params: { assetId, caption: entry?.caption },
+                            params: {
+                              assetId,
+                              caption: entry?.caption,
+                              date,
+                            },
                           })
                         }
                       >
                         <Image
                           source={{
-                            uri: `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${assetId}?type=thumbnail`,
+                          uri: apiUrl(
+                            `/api/media/immich/${assetId}?type=thumbnail`
+                          ),
                           }}
                           style={styles.thumbnail}
                         />

@@ -74,7 +74,7 @@ public class AppConfig {
 
     public static final String CORS_ALLOWED_ORIGINS =
             env("CORS_ALLOWED_ORIGINS",
-                    "https://thisdayui.hostingfrompurva.xyz,http://localhost:19006,http://localhost:3000");
+                    "https://thisdayui.hostingfrompurva.xyz,http://localhost:19006,http://localhost:3000,http://localhost:3001");
 
     static {
         log.info("AppConfig initialization completed");

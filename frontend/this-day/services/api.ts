@@ -1,8 +1,9 @@
 import axios from "axios";
 import { getToken } from "./auth";
+import { API_BASE_URL } from "./apiBase";
 
 const api = axios.create({
-  baseURL: "https://thisdayapi.hostingfrompurva.xyz",
+  baseURL: API_BASE_URL,
 });
 
 api.interceptors.request.use(async (config) => {

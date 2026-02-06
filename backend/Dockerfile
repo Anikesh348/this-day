@@ -1,5 +1,6 @@
 # ======= BUILD STAGE =======
 FROM gradle:8.8-jdk21 AS build
+ARG APP_ENV=prod
 
 WORKDIR /app
 
@@ -15,6 +16,8 @@ RUN ./gradlew shadowJar --no-daemon
 
 # ======= RUNTIME STAGE =======
 FROM eclipse-temurin:21-jre-jammy
+ARG APP_ENV=prod
+ENV APP_ENV=${APP_ENV}
 
 WORKDIR /app
 
@@ -27,7 +30,8 @@ RUN apt-get update \
 COPY --from=build /app/build/libs/*-all.jar app.jar
 
 # Copy runtime env file (mounted or baked in)
-COPY .env .env
+ARG APP_ENV=prod
+COPY .env.${APP_ENV} .env
 
 # Health check endpoint (restart policy in compose)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
