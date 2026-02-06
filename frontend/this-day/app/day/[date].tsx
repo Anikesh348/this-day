@@ -158,7 +158,11 @@ export default function DayViewScreen() {
                         onPress={() =>
                           router.push({
                             pathname: "media/[assetId]",
-                            params: { assetId, caption: entry?.caption },
+                            params: {
+                              assetId,
+                              caption: entry?.caption,
+                              date,
+                            },
                           })
                         }
                       >

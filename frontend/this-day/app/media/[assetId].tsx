@@ -2,21 +2,24 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ActivityIndicator,
-  Image,
+  FlatList,
   Platform,
   Pressable,
   StyleSheet,
   View,
   Text,
   Animated,
+  useWindowDimensions,
 } from "react-native";
 import { Video, ResizeMode, AVPlaybackStatus } from "expo-av";
 import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import { LinearGradient } from "expo-linear-gradient";
-import { Screen } from "@/components/Screen";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { StatusBar } from "expo-status-bar";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { getDayEntries } from "@/services/entries";
+import { Colors } from "@/theme/colors";
 
 /* =========================================================
  * Writable directory helper (Expo Go safe)
@@ -31,28 +34,274 @@ function getWritableDir(): string | null {
 
 type MediaKind = "image" | "video";
 
+type MediaItem = {
+  id: string;
+  caption?: string | null;
+};
+
 export default function MediaViewerScreen() {
   const router = useRouter();
-  const { assetId, caption } = useLocalSearchParams<{
+  const { assetId, caption, date } = useLocalSearchParams<{
     assetId: string;
-    caption: string;
+    caption?: string;
+    date?: string;
   }>();
 
   if (!assetId) return null;
 
-  const mediaUrl = `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${assetId}?type=full`;
+  const { width, height } = useWindowDimensions();
+  const listRef = useRef<FlatList<MediaItem>>(null);
 
-  const videoRef = useRef<Video>(null);
+  const [items, setItems] = useState<MediaItem[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(true);
+  const [activeIndex, setActiveIndex] = useState(0);
 
   const controlsOpacity = useRef(new Animated.Value(1)).current;
+  const [downloading, setDownloading] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
+
+  /* =========================================================
+   * Load day assets (for swipe)
+   * ======================================================= */
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      setItemsLoading(true);
+      try {
+        if (date) {
+          const [y, m, d] = date.split("-").map(Number);
+          const res = await getDayEntries(y, m, d);
+
+          const nextItems: MediaItem[] = [];
+          for (const entry of res.data ?? []) {
+            const ids = (entry.immichAssetIds ?? []).filter(Boolean) as string[];
+            for (const id of ids) {
+              nextItems.push({ id, caption: entry.caption });
+            }
+          }
+
+          if (!cancelled && nextItems.length > 0) {
+            setItems(nextItems);
+            return;
+          }
+        }
+
+        if (!cancelled) {
+          setItems([{ id: assetId, caption }]);
+        }
+      } catch {
+        if (!cancelled) {
+          setItems([{ id: assetId, caption }]);
+        }
+      } finally {
+        if (!cancelled) setItemsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [assetId, caption, date]);
+
+  /* =========================================================
+   * Sync active index to assetId
+   * ======================================================= */
+  const initialIndex = useMemo(() => {
+    const found = items.findIndex((item) => item.id === assetId);
+    return found >= 0 ? found : 0;
+  }, [items, assetId]);
+
+  useEffect(() => {
+    if (items.length === 0) return;
+    setActiveIndex(initialIndex);
+    requestAnimationFrame(() => {
+      try {
+        listRef.current?.scrollToIndex({
+          index: initialIndex,
+          animated: false,
+        });
+      } catch {}
+    });
+  }, [items, initialIndex]);
+
+  /* =========================================================
+   * Controls toggle
+   * ======================================================= */
+  const toggleControls = () => {
+    const nextVisible = !controlsVisible;
+    Animated.timing(controlsOpacity, {
+      toValue: nextVisible ? 1 : 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(() => setControlsVisible(nextVisible));
+  };
+
+  /* =========================================================
+   * Download
+   * ======================================================= */
+  const handleDownload = async () => {
+    const current = items[activeIndex];
+    if (!current) return;
+
+    const mediaUrl = `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${current.id}?type=full`;
+
+    if (Platform.OS === "web") {
+      window.open(mediaUrl, "_blank");
+      return;
+    }
+
+    try {
+      setDownloading(true);
+      const perm = await MediaLibrary.requestPermissionsAsync();
+      if (!perm.granted) return;
+
+      const dir = getWritableDir();
+      if (!dir) return;
+
+      let ext = "jpg";
+      try {
+        const res = await fetch(mediaUrl, {
+          headers: { Range: "bytes=0-1" },
+        });
+        const type = res.headers.get("content-type") ?? "";
+        if (type.startsWith("video/")) ext = "mp4";
+      } catch {
+        ext = "jpg";
+      }
+
+      const fileUri = `${dir}${current.id}.${ext}`;
+
+      const { uri } = await FileSystem.downloadAsync(mediaUrl, fileUri);
+      await MediaLibrary.saveToLibraryAsync(uri);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  /* =========================================================
+   * Render
+   * ======================================================= */
+  return (
+    <View style={styles.root}>
+      <StatusBar style="light" hidden={!controlsVisible} />
+
+      <FlatList
+        ref={listRef}
+        data={items}
+        horizontal
+        pagingEnabled
+        key={width}
+        keyExtractor={(item) => item.id}
+        showsHorizontalScrollIndicator={false}
+        onViewableItemsChanged={({ viewableItems }) => {
+          if (viewableItems.length === 0) return;
+          setActiveIndex(viewableItems[0].index ?? 0);
+        }}
+        viewabilityConfig={{ viewAreaCoveragePercentThreshold: 70 }}
+        getItemLayout={(_, index) => ({
+          length: width,
+          offset: width * index,
+          index,
+        })}
+        renderItem={({ item, index }) => (
+          <MediaSlide
+            item={item}
+            width={width}
+            height={height}
+            isActive={index === activeIndex}
+            onToggleControls={toggleControls}
+          />
+        )}
+        ListEmptyComponent={
+          <View style={[styles.loadingWrap, { width, height }]}>
+            <ActivityIndicator size="large" color="white" />
+          </View>
+        }
+      />
+
+      {/* Top gradient */}
+      <LinearGradient
+        colors={["rgba(3,5,10,0.9)", "transparent"]}
+        style={styles.topGradient}
+        pointerEvents="none"
+      />
+
+      {/* Bottom gradient */}
+      <LinearGradient
+        colors={["transparent", "rgba(3,5,10,0.95)"]}
+        style={styles.bottomGradient}
+        pointerEvents="none"
+      />
+
+      {/* Overlays */}
+      <SafeAreaView pointerEvents="box-none" style={styles.overlay}>
+        <Animated.View style={[styles.topBar, { opacity: controlsOpacity }]}>
+          <IconButton icon="close" onPress={() => router.back()} />
+          <View style={styles.topCenter}>
+            {items.length > 0 && (
+              <View style={styles.indexPill}>
+                <Text style={styles.indexText}>
+                  {activeIndex + 1} / {items.length}
+                </Text>
+              </View>
+            )}
+          </View>
+          <IconButton
+            icon="download-outline"
+            onPress={handleDownload}
+            loading={downloading}
+          />
+        </Animated.View>
+
+        <Animated.View
+          style={[styles.bottomBar, { opacity: controlsOpacity }]}
+        >
+          {!!items[activeIndex]?.caption && (
+            <View style={styles.captionCard}>
+              <Text style={styles.captionText}>
+                {items[activeIndex]?.caption}
+              </Text>
+            </View>
+          )}
+          {items.length > 1 && (
+            <Text style={styles.hintText}>Swipe to see more</Text>
+          )}
+        </Animated.View>
+      </SafeAreaView>
+
+      {itemsLoading && (
+        <View style={[styles.loadingOverlay, { width, height }]}>
+          <ActivityIndicator size="large" color="white" />
+        </View>
+      )}
+    </View>
+  );
+}
+
+/* =========================================================
+ * Slide
+ * ======================================================= */
+function MediaSlide({
+  item,
+  width,
+  height,
+  isActive,
+  onToggleControls,
+}: {
+  item: MediaItem;
+  width: number;
+  height: number;
+  isActive: boolean;
+  onToggleControls: () => void;
+}) {
+  const mediaUrl = `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${item.id}?type=full`;
+  const videoRef = useRef<Video>(null);
   const imageOpacity = useRef(new Animated.Value(0)).current;
 
   const [mediaType, setMediaType] = useState<MediaKind | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const [controlsVisible, setControlsVisible] = useState(true);
-  const [isPlaying, setIsPlaying] = useState(true);
   const [localVideoUri, setLocalVideoUri] = useState<string | null>(null);
 
   /* =========================================================
@@ -60,6 +309,10 @@ export default function MediaViewerScreen() {
    * ======================================================= */
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setError(false);
+    setLocalVideoUri(null);
+    imageOpacity.setValue(0);
 
     (async () => {
       try {
@@ -78,13 +331,14 @@ export default function MediaViewerScreen() {
     return () => {
       cancelled = true;
     };
-  }, [assetId]);
+  }, [item.id]);
 
   /* =========================================================
-   * Optional video preload
+   * Optional video preload (only when active)
    * ======================================================= */
   useEffect(() => {
-    if (mediaType !== "video" || Platform.OS === "web") {
+    if (mediaType !== "video") return;
+    if (Platform.OS === "web" || !isActive) {
       setLoading(false);
       return;
     }
@@ -99,7 +353,7 @@ export default function MediaViewerScreen() {
 
     (async () => {
       try {
-        const fileUri = `${dir}${assetId}.mp4`;
+        const fileUri = `${dir}${item.id}.mp4`;
         const info = await FileSystem.getInfoAsync(fileUri);
         if (!info.exists) {
           await FileSystem.downloadAsync(mediaUrl, fileUri);
@@ -116,7 +370,7 @@ export default function MediaViewerScreen() {
     return () => {
       cancelled = true;
     };
-  }, [mediaType, assetId]);
+  }, [mediaType, item.id, isActive]);
 
   /* =========================================================
    * Playback state (iOS replay fix included)
@@ -124,23 +378,10 @@ export default function MediaViewerScreen() {
   const onPlaybackStatus = (status: AVPlaybackStatus) => {
     if (!status.isLoaded) return;
 
-    setIsPlaying(status.isPlaying);
-
     // ✅ iOS fix: rewind after finish so it can play again
     if (status.didJustFinish && !status.isLooping) {
       videoRef.current?.setPositionAsync(0);
     }
-  };
-
-  /* =========================================================
-   * Controls toggle
-   * ======================================================= */
-  const toggleControls = () => {
-    Animated.timing(controlsOpacity, {
-      toValue: controlsVisible ? 0 : 1,
-      duration: 180,
-      useNativeDriver: true,
-    }).start(() => setControlsVisible(!controlsVisible));
   };
 
   /* =========================================================
@@ -154,106 +395,46 @@ export default function MediaViewerScreen() {
     }).start();
   };
 
-  /* =========================================================
-   * Download
-   * ======================================================= */
-  const handleDownload = async () => {
-    if (Platform.OS === "web") {
-      window.open(mediaUrl, "_blank");
-      return;
-    }
-
-    try {
-      setDownloading(true);
-      const perm = await MediaLibrary.requestPermissionsAsync();
-      if (!perm.granted) return;
-
-      const dir = getWritableDir();
-      if (!dir) return;
-
-      const ext = mediaType === "video" ? "mp4" : "jpg";
-      const fileUri = `${dir}${assetId}.${ext}`;
-
-      const { uri } = await FileSystem.downloadAsync(mediaUrl, fileUri);
-      await MediaLibrary.saveToLibraryAsync(uri);
-    } finally {
-      setDownloading(false);
-    }
-  };
-
-  /* =========================================================
-   * Render
-   * ======================================================= */
   return (
-    <Screen>
-      <StatusBar style="light" hidden={!controlsVisible} />
-      <View style={styles.container}>
-        {/* Top gradient */}
-        <LinearGradient
-          colors={["rgba(0,0,0,0.7)", "transparent"]}
-          style={styles.topGradient}
+    <Pressable
+      style={[styles.slide, { width, height }]}
+      onPress={onToggleControls}
+    >
+      {mediaType === "image" && (
+        <Animated.Image
+          source={{ uri: mediaUrl }}
+          style={[styles.media, { opacity: imageOpacity }]}
+          resizeMode="contain"
+          onLoadEnd={() => {
+            setLoading(false);
+            onImageLoad();
+          }}
+          onError={() => setError(true)}
         />
+      )}
 
-        {/* Top bar */}
-        <Animated.View style={[styles.topBar, { opacity: controlsOpacity }]}>
-          <IconButton icon="close" onPress={() => router.back()} />
-          <IconButton
-            icon="download-outline"
-            onPress={handleDownload}
-            loading={downloading}
+      {mediaType === "video" &&
+        (Platform.OS === "web" ? (
+          <video src={mediaUrl} controls autoPlay style={styles.webVideo} />
+        ) : (
+          <Video
+            ref={videoRef}
+            source={{ uri: localVideoUri ?? mediaUrl }}
+            style={styles.media}
+            resizeMode={ResizeMode.CONTAIN}
+            shouldPlay={isActive}
+            useNativeControls
+            onPlaybackStatusUpdate={onPlaybackStatus}
           />
-        </Animated.View>
+        ))}
 
-        {/* Media */}
-        <Pressable style={styles.mediaContainer} onPress={toggleControls}>
-          {mediaType === "image" && (
-            <Animated.Image
-              source={{ uri: mediaUrl }}
-              style={[styles.media, { opacity: imageOpacity }]}
-              resizeMode="contain"
-              onLoadEnd={() => {
-                setLoading(false);
-                onImageLoad();
-              }}
-              onError={() => setError(true)}
-            />
-          )}
-
-          {mediaType === "video" &&
-            (Platform.OS === "web" ? (
-              <video src={mediaUrl} controls autoPlay style={styles.webVideo} />
-            ) : (
-              <Video
-                ref={videoRef}
-                source={{ uri: localVideoUri ?? mediaUrl }}
-                style={styles.media}
-                resizeMode={ResizeMode.CONTAIN}
-                shouldPlay
-                useNativeControls
-                onPlaybackStatusUpdate={onPlaybackStatus}
-              />
-            ))}
-
-          {loading && <ActivityIndicator size="large" color="white" />}
-          {error && <Text style={styles.errorText}>Failed to load media</Text>}
-        </Pressable>
-
-        {/* Bottom gradient + meta */}
-        <LinearGradient
-          colors={["transparent", "rgba(0,0,0,0.75)"]}
-          style={styles.bottomGradient}
-        >
-          <Text style={styles.metaText}>{caption}</Text>
-        </LinearGradient>
-
-        {/* Play overlay */}
-        {/* {mediaType === "video" && !isPlaying && (
-          <View style={styles.playOverlay}>
-            <Ionicons name="play" size={44} color="white" />
-          </View>
-        )} */}
-      </View>
-    </Screen>
+      {loading && (
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color="white" />
+        </View>
+      )}
+      {error && <Text style={styles.errorText}>Failed to load media</Text>}
+    </Pressable>
   );
 }
 
@@ -284,9 +465,15 @@ function IconButton({
  * Styles
  * ======================================================= */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#000" },
+  root: {
+    flex: 1,
+    backgroundColor: "#05070C",
+  },
 
-  mediaContainer: { flex: 1, justifyContent: "center" },
+  slide: {
+    justifyContent: "center",
+    backgroundColor: "#05070C",
+  },
 
   media: { width: "100%", height: "100%" },
 
@@ -297,23 +484,84 @@ const styles = StyleSheet.create({
     backgroundColor: "black",
   },
 
+  overlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "space-between",
+  },
+
   topGradient: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    height: 140,
-    zIndex: 5,
+    height: 220,
+  },
+
+  bottomGradient: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 240,
   },
 
   topBar: {
-    position: "absolute",
-    top: Platform.OS === "ios" ? 60 : 16,
-    left: 16,
-    right: 16,
-    zIndex: 10,
+    paddingHorizontal: 16,
+    paddingTop: 6,
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
+  },
+
+  topCenter: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  indexPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+
+  indexText: {
+    color: Colors.dark.textSecondary,
+    fontSize: 12,
+    letterSpacing: 0.4,
+  },
+
+  bottomBar: {
+    paddingHorizontal: 18,
+    paddingBottom: 16,
+    gap: 8,
+  },
+
+  captionCard: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: "rgba(8,10,16,0.7)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+
+  captionText: {
+    color: Colors.dark.textPrimary,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+
+  hintText: {
+    color: Colors.dark.textMuted,
+    fontSize: 12,
+    textAlign: "center",
   },
 
   iconButton: {
@@ -325,32 +573,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  bottomGradient: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 160,
-    paddingHorizontal: 20,
-    paddingBottom: 28,
-    justifyContent: "flex-end",
-  },
-
-  metaText: {
-    color: "rgba(255,255,255,0.85)",
-    fontSize: 14,
-    letterSpacing: 0.4,
-  },
-
-  playOverlay: {
-    position: "absolute",
-    alignSelf: "center",
-    top: "45%",
-  },
-
   errorText: {
     color: "#aaa",
     textAlign: "center",
     marginTop: 20,
+  },
+
+  loadingWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  loadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(3,5,10,0.65)",
   },
 });
