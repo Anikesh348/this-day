@@ -47,7 +47,7 @@ jobs:
             echo "====================================="
 
             echo "📂 Switching to project directory"
-            cd /srv/thisday
+            cd /srv/this-day
 
             echo "📌 Git status (before)"
             git status
