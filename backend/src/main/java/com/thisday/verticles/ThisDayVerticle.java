@@ -63,9 +63,11 @@ public class ThisDayVerticle extends AbstractVerticle {
         var mongo = MongoProvider.get(vertx);
 
         router.get("/health").handler(ctx -> {
+            log.debug("Health check requested");
             JsonObject cmd = new JsonObject().put("ping", 1);
             mongo.runCommand("ping", cmd, ar -> {
                 if (ar.succeeded()) {
+                    log.debug("Health check OK: MongoDB ping succeeded");
                     ctx.response()
                             .setStatusCode(200)
                             .putHeader("Content-Type", "application/json")

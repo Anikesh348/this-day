@@ -10,6 +10,6 @@
         <appender-ref ref="STDOUT" />
     </root>
 
-    <!-- Example: Set DEBUG for your package -->
-    <logger name="com.toolhub" level="DEBUG" />
+    <!-- Enable DEBUG for this app -->
+    <logger name="com.thisday" level="DEBUG" />
 </configuration>
