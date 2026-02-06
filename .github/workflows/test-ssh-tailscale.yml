@@ -8,21 +8,33 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Join Tailscale
+      - name: 🧩 Join Tailscale tailnet
         uses: tailscale/github-action@v2
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
           hostname: gha-test-thisday
-          tags: tag:ci
 
-      - name: SSH into Pi
+      - name: 🔍 Verify Tailscale status
+        run: |
+          echo "== Tailscale status =="
+          tailscale status
+          echo ""
+          echo "== Tailscale IPs =="
+          tailscale ip
+
+      - name: 🔐 SSH into Raspberry Pi
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.PI_HOST }}
           username: ${{ secrets.PI_USER }}
           key: ${{ secrets.PI_SSH_KEY }}
           script: |
-            echo "Connected successfully 🎉"
+            echo "✅ SSH connection successful"
+            echo "Hostname:"
             hostname
+            echo "User:"
             whoami
+            echo "Uptime:"
             uptime
+            echo "Disk usage:"
+            df -h /
