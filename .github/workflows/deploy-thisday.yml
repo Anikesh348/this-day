@@ -3,7 +3,7 @@ name: Deploy ThisDay (Docker Build + Up)
 on:
   push:
     branches:
-      - feat/thisDay
+      - "**"
 
 jobs:
   deploy:
@@ -56,11 +56,14 @@ jobs:
             echo "⬇️ Fetching latest changes"
             git fetch origin
 
-            echo "📌 Checking out feat/thisDay"
-            git checkout feat/thisDay
+            DEPLOY_BRANCH="${{ github.ref_name }}"
+            APP_ENV="${{ github.ref_name == 'feat/thisDay' && 'prod' || 'dev' }}"
+
+            echo "📌 Checking out ${DEPLOY_BRANCH}"
+            git checkout "${DEPLOY_BRANCH}"
 
             echo "⬇️ Pulling latest commits"
-            git pull origin feat/thisDay
+            git pull origin "${DEPLOY_BRANCH}"
 
             echo "📌 Latest commit"
             git log -1 --oneline
@@ -71,10 +74,10 @@ jobs:
             echo "====================================="
 
             echo "🔨 Building Docker images"
-            docker compose build
+            APP_ENV="${APP_ENV}" docker compose --profile "${APP_ENV}" build
 
             echo "🚀 Starting containers"
-            docker compose up -d
+            APP_ENV="${APP_ENV}" docker compose --profile "${APP_ENV}" up -d
 
             echo "====================================="
             echo "🐳 Docker Compose status (after)"

@@ -20,6 +20,7 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getDayEntries } from "@/services/entries";
 import { Colors } from "@/theme/colors";
+import { apiUrl } from "@/services/apiBase";
 
 /* =========================================================
  * Writable directory helper (Expo Go safe)
@@ -51,6 +52,15 @@ export default function MediaViewerScreen() {
 
   const { width, height } = useWindowDimensions();
   const listRef = useRef<FlatList<MediaItem>>(null);
+  const viewabilityConfig = useRef({
+    viewAreaCoveragePercentThreshold: 70,
+  }).current;
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: Array<{ index?: number | null }> }) => {
+      if (viewableItems.length === 0) return;
+      setActiveIndex(viewableItems[0].index ?? 0);
+    }
+  ).current;
 
   const [items, setItems] = useState<MediaItem[]>([]);
   const [itemsLoading, setItemsLoading] = useState(true);
@@ -137,6 +147,20 @@ export default function MediaViewerScreen() {
     }).start(() => setControlsVisible(nextVisible));
   };
 
+  const handlePrev = () => {
+    const nextIndex = Math.max(activeIndex - 1, 0);
+    if (nextIndex === activeIndex) return;
+    listRef.current?.scrollToIndex({ index: nextIndex, animated: true });
+    setActiveIndex(nextIndex);
+  };
+
+  const handleNext = () => {
+    const nextIndex = Math.min(activeIndex + 1, items.length - 1);
+    if (nextIndex === activeIndex) return;
+    listRef.current?.scrollToIndex({ index: nextIndex, animated: true });
+    setActiveIndex(nextIndex);
+  };
+
   /* =========================================================
    * Download
    * ======================================================= */
@@ -144,7 +168,7 @@ export default function MediaViewerScreen() {
     const current = items[activeIndex];
     if (!current) return;
 
-    const mediaUrl = `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${current.id}?type=full`;
+    const mediaUrl = apiUrl(`/api/media/immich/${current.id}?type=full`);
 
     if (Platform.OS === "web") {
       window.open(mediaUrl, "_blank");
@@ -194,11 +218,8 @@ export default function MediaViewerScreen() {
         key={width}
         keyExtractor={(item) => item.id}
         showsHorizontalScrollIndicator={false}
-        onViewableItemsChanged={({ viewableItems }) => {
-          if (viewableItems.length === 0) return;
-          setActiveIndex(viewableItems[0].index ?? 0);
-        }}
-        viewabilityConfig={{ viewAreaCoveragePercentThreshold: 70 }}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
         getItemLayout={(_, index) => ({
           length: width,
           offset: width * index,
@@ -264,10 +285,39 @@ export default function MediaViewerScreen() {
               </Text>
             </View>
           )}
-          {items.length > 1 && (
-            <Text style={styles.hintText}>Swipe to see more</Text>
-          )}
         </Animated.View>
+
+        {items.length > 1 && (
+          <Animated.View
+            style={[styles.navButtons, { opacity: controlsOpacity }]}
+            pointerEvents={controlsVisible ? "box-none" : "none"}
+          >
+            <Pressable
+              onPress={handlePrev}
+              style={({ pressed }) => [
+                styles.navButton,
+                styles.navLeft,
+                pressed && { opacity: 0.7 },
+                activeIndex === 0 && styles.navDisabled,
+              ]}
+              disabled={activeIndex === 0}
+            >
+              <Ionicons name="chevron-back" size={22} color="white" />
+            </Pressable>
+            <Pressable
+              onPress={handleNext}
+              style={({ pressed }) => [
+                styles.navButton,
+                styles.navRight,
+                pressed && { opacity: 0.7 },
+                activeIndex === items.length - 1 && styles.navDisabled,
+              ]}
+              disabled={activeIndex === items.length - 1}
+            >
+              <Ionicons name="chevron-forward" size={22} color="white" />
+            </Pressable>
+          </Animated.View>
+        )}
       </SafeAreaView>
 
       {itemsLoading && (
@@ -295,7 +345,7 @@ function MediaSlide({
   isActive: boolean;
   onToggleControls: () => void;
 }) {
-  const mediaUrl = `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${item.id}?type=full`;
+  const mediaUrl = apiUrl(`/api/media/immich/${item.id}?type=full`);
   const videoRef = useRef<Video>(null);
   const imageOpacity = useRef(new Animated.Value(0)).current;
 
@@ -303,6 +353,7 @@ function MediaSlide({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [localVideoUri, setLocalVideoUri] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   /* =========================================================
    * Detect media type
@@ -378,6 +429,8 @@ function MediaSlide({
   const onPlaybackStatus = (status: AVPlaybackStatus) => {
     if (!status.isLoaded) return;
 
+    setIsPlaying(status.isPlaying);
+
     // ✅ iOS fix: rewind after finish so it can play again
     if (status.didJustFinish && !status.isLooping) {
       videoRef.current?.setPositionAsync(0);
@@ -396,36 +449,65 @@ function MediaSlide({
   };
 
   return (
-    <Pressable
-      style={[styles.slide, { width, height }]}
-      onPress={onToggleControls}
-    >
+    <View style={[styles.slide, { width, height }]}>
       {mediaType === "image" && (
-        <Animated.Image
-          source={{ uri: mediaUrl }}
-          style={[styles.media, { opacity: imageOpacity }]}
-          resizeMode="contain"
-          onLoadEnd={() => {
-            setLoading(false);
-            onImageLoad();
-          }}
-          onError={() => setError(true)}
-        />
+        <Pressable style={styles.pressableFill} onPress={onToggleControls}>
+          <Animated.Image
+            source={{ uri: mediaUrl }}
+            style={[styles.media, { opacity: imageOpacity }]}
+            resizeMode="contain"
+            onLoadEnd={() => {
+              setLoading(false);
+              onImageLoad();
+            }}
+            onError={() => setError(true)}
+          />
+        </Pressable>
       )}
 
       {mediaType === "video" &&
         (Platform.OS === "web" ? (
-          <video src={mediaUrl} controls autoPlay style={styles.webVideo} />
-        ) : (
-          <Video
-            ref={videoRef}
-            source={{ uri: localVideoUri ?? mediaUrl }}
-            style={styles.media}
-            resizeMode={ResizeMode.CONTAIN}
-            shouldPlay={isActive}
-            useNativeControls
-            onPlaybackStatusUpdate={onPlaybackStatus}
+          <video
+            src={mediaUrl}
+            controls
+            autoPlay
+            loop
+            style={styles.webVideo}
           />
+        ) : (
+          <View style={styles.videoWrap}>
+            <Video
+              ref={videoRef}
+              source={{ uri: localVideoUri ?? mediaUrl }}
+              style={styles.media}
+              resizeMode={ResizeMode.CONTAIN}
+              shouldPlay={isActive}
+              isLooping
+              useNativeControls
+              onPlaybackStatusUpdate={onPlaybackStatus}
+            />
+            <View pointerEvents="box-none" style={styles.videoOverlay}>
+              <Pressable
+                onPress={async () => {
+                  if (isPlaying) {
+                    await videoRef.current?.pauseAsync();
+                  } else {
+                    await videoRef.current?.playAsync();
+                  }
+                }}
+                style={({ pressed }) => [
+                  styles.videoControlButton,
+                  pressed && { opacity: 0.7 },
+                ]}
+              >
+                <Ionicons
+                  name={isPlaying ? "pause" : "play"}
+                  size={26}
+                  color="white"
+                />
+              </Pressable>
+            </View>
+          </View>
         ))}
 
       {loading && (
@@ -434,7 +516,7 @@ function MediaSlide({
         </View>
       )}
       {error && <Text style={styles.errorText}>Failed to load media</Text>}
-    </Pressable>
+    </View>
   );
 }
 
@@ -473,6 +555,10 @@ const styles = StyleSheet.create({
   slide: {
     justifyContent: "center",
     backgroundColor: "#05070C",
+  },
+
+  pressableFill: {
+    flex: 1,
   },
 
   media: { width: "100%", height: "100%" },
@@ -558,12 +644,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
 
-  hintText: {
-    color: Colors.dark.textMuted,
-    fontSize: 12,
-    textAlign: "center",
-  },
-
   iconButton: {
     width: 44,
     height: 44,
@@ -592,5 +672,64 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(3,5,10,0.65)",
+  },
+
+  videoWrap: {
+    flex: 1,
+  },
+
+  videoOverlay: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  videoControlButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  navButtons: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  navButton: {
+    position: "absolute",
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  navLeft: {
+    left: 10,
+  },
+
+  navRight: {
+    right: 10,
+  },
+
+  navDisabled: {
+    opacity: 0.35,
   },
 });

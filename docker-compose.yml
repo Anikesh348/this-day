@@ -1,11 +1,16 @@
 
 services:
-  backend:
+  backend-dev:
+    profiles: ["dev"]
     build:
       context: ./backend
-    container_name: this_day_backend_server
+      args:
+        APP_ENV: dev
+    container_name: this_day_backend_dev
     ports:
-      - "8081:8081"
+      - "18081:8081"
+    environment:
+      HTTP_PORT: 8081
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8081/health || (kill -s TERM 1 && exit 1)"]
       interval: 30s
@@ -13,10 +18,43 @@ services:
       retries: 3
       start_period: 15s
     restart: always
-  frontend:
+  frontend-dev:
+    profiles: ["dev"]
     build:
       context: ./frontend/this-day
-    container_name: this_day_frontend_server
+      args:
+        APP_ENV: dev
+    container_name: this_day_frontend_dev
+    ports:
+     - "13001:3001"
+    restart: always
+
+  backend-prod:
+    profiles: ["prod"]
+    build:
+      context: ./backend
+      args:
+        APP_ENV: prod
+    container_name: this_day_backend_prod
+    ports:
+      - "8081:8081"
+    environment:
+      HTTP_PORT: 8081
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/health || (kill -s TERM 1 && exit 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: always
+
+  frontend-prod:
+    profiles: ["prod"]
+    build:
+      context: ./frontend/this-day
+      args:
+        APP_ENV: prod
+    container_name: this_day_frontend_prod
     ports:
      - "3001:3001"
     restart: always

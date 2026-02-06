@@ -12,6 +12,7 @@ import { CalendarList } from "react-native-calendars";
 
 import { getCalendar } from "@/services/entries";
 import { Colors } from "@/theme/colors";
+import { apiUrl } from "@/services/apiBase";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -138,7 +139,7 @@ export default function CalendarScreen() {
               source={
                 hasEntry
                   ? {
-                      uri: `https://thisdayapi.hostingfrompurva.xyz/api/media/immich/${assetId}?type=thumbnail`,
+                      uri: apiUrl(`/api/media/immich/${assetId}?type=thumbnail`),
                     }
                   : undefined
               }
