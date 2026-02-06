@@ -28,7 +28,8 @@ public class UserRoutes {
                     User user = User.fromJwt(claims);
 
                     log.debug("Syncing user from /api/me [id={}]", user.id);
-                    userService.syncUser(user);
+                    userService.syncUser(user)
+                            .onFailure(err -> log.error("Failed to sync user [id={}]", user.id, err));
 
                     ctx.json(user.toJson());
                 });

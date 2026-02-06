@@ -37,17 +37,17 @@ public class EntryReadRoutes {
                     );
 
                     entryReadService.getEntriesForDay(
-                            userId, year, month, day, ar -> {
-                                if (ar.failed()) {
-                                    log.error("Get entries for day failed", ar.cause());
-                                    ctx.fail(500);
-                                } else {
-                                    ctx.response()
-                                            .putHeader("Content-Type", "application/json")
-                                            .end(ar.result().encode());
-                                }
-                            }
-                    );
+                            userId, year, month, day
+                    ).onComplete(ar -> {
+                        if (ar.failed()) {
+                            log.error("Get entries for day failed", ar.cause());
+                            ctx.fail(500);
+                        } else {
+                            ctx.response()
+                                    .putHeader("Content-Type", "application/json")
+                                    .end(ar.result().encode());
+                        }
+                    });
                 });
 
         // 2️⃣ Same day, previous months (same year only)
@@ -69,17 +69,17 @@ public class EntryReadRoutes {
                     );
 
                     entryReadService.getSameDayPreviousMonths(
-                            userId, year, month, day, ar -> {
-                                if (ar.failed()) {
-                                    log.error("Get same-day previous months failed", ar.cause());
-                                    ctx.fail(500);
-                                } else {
-                                    ctx.response()
-                                            .putHeader("Content-Type", "application/json")
-                                            .end(ar.result().encode());
-                                }
-                            }
-                    );
+                            userId, year, month, day
+                    ).onComplete(ar -> {
+                        if (ar.failed()) {
+                            log.error("Get same-day previous months failed", ar.cause());
+                            ctx.fail(500);
+                        } else {
+                            ctx.response()
+                                    .putHeader("Content-Type", "application/json")
+                                    .end(ar.result().encode());
+                        }
+                    });
                 });
 
         // 3️⃣ Same day, previous years
@@ -101,17 +101,17 @@ public class EntryReadRoutes {
 
 
                     entryReadService.getSameDayPreviousYears(
-                            userId, year,  month, day, ar -> {
-                                if (ar.failed()) {
-                                    log.error("Get same-day previous years failed", ar.cause());
-                                    ctx.fail(500);
-                                } else {
-                                    ctx.response()
-                                            .putHeader("Content-Type", "application/json")
-                                            .end(ar.result().encode());
-                                }
-                            }
-                    );
+                            userId, year,  month, day
+                    ).onComplete(ar -> {
+                        if (ar.failed()) {
+                            log.error("Get same-day previous years failed", ar.cause());
+                            ctx.fail(500);
+                        } else {
+                            ctx.response()
+                                    .putHeader("Content-Type", "application/json")
+                                    .end(ar.result().encode());
+                        }
+                    });
                 });
 
 
@@ -133,17 +133,17 @@ public class EntryReadRoutes {
                     );
 
                     entryReadService.getTodaySummary(
-                            userId, year, month, day, ar -> {
-                                if (ar.failed()) {
-                                    log.error("Get today summary failed", ar.cause());
-                                    ctx.fail(500);
-                                } else {
-                                    ctx.response()
-                                            .putHeader("Content-Type", "application/json")
-                                            .end(ar.result().encode());
-                                }
-                            }
-                    );
+                            userId, year, month, day
+                    ).onComplete(ar -> {
+                        if (ar.failed()) {
+                            log.error("Get today summary failed", ar.cause());
+                            ctx.fail(500);
+                        } else {
+                            ctx.response()
+                                    .putHeader("Content-Type", "application/json")
+                                    .end(ar.result().encode());
+                        }
+                    });
                 });
 
 
@@ -165,17 +165,17 @@ public class EntryReadRoutes {
                     );
 
                     entryReadService.getCalendarEntries(
-                            userId, year, month, ar -> {
-                                if (ar.failed()) {
-                                    log.error("Get calendar entries failed", ar.cause());
-                                    ctx.fail(500);
-                                } else {
-                                    ctx.response()
-                                            .putHeader("Content-Type", "application/json")
-                                            .end(ar.result().encode());
-                                }
-                            }
-                    );
+                            userId, year, month
+                    ).onComplete(ar -> {
+                        if (ar.failed()) {
+                            log.error("Get calendar entries failed", ar.cause());
+                            ctx.fail(500);
+                        } else {
+                            ctx.response()
+                                    .putHeader("Content-Type", "application/json")
+                                    .end(ar.result().encode());
+                        }
+                    });
                 });
     }
 }

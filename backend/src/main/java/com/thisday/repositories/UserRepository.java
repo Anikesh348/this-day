@@ -20,7 +20,7 @@ public class UserRepository {
         log.info("UserRepository initialized");
     }
 
-    public void upsert(User user, Handler<AsyncResult<Void>> handler) {
+    public Future<Void> upsert(User user) {
 
         log.debug("Upserting user [id={}]", user.id);
 
@@ -41,6 +41,7 @@ public class UserRepository {
 
         UpdateOptions options = new UpdateOptions().setUpsert(true);
 
+        Promise<Void> promise = Promise.promise();
         mongo.updateCollectionWithOptions(
                 "users",
                 query,
@@ -53,12 +54,13 @@ public class UserRepository {
                                 user.id,
                                 ar.cause()
                         );
-                        handler.handle(Future.failedFuture(ar.cause()));
+                        promise.fail(ar.cause());
                     } else {
                         log.debug("User upsert successful [id={}]", user.id);
-                        handler.handle(Future.succeededFuture());
+                        promise.complete();
                     }
                 }
         );
+        return promise.future();
     }
 }

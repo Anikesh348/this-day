@@ -16,49 +16,54 @@ public class EntryRepository {
         this.mongo = mongo;
     }
 
-    public void insert(Entry entry, Handler<AsyncResult<Void>> handler) {
+    public Future<Void> insert(Entry entry) {
+        Promise<Void> promise = Promise.promise();
         mongo.insert("entries", entry.toJson(), ar -> {
-            handler.handle(ar.succeeded()
-                    ? Future.succeededFuture()
-                    : Future.failedFuture(ar.cause()));
+            if (ar.succeeded()) {
+                promise.complete();
+            } else {
+                promise.fail(ar.cause());
+            }
         });
+        return promise.future();
     }
 
-    public void findById(
+    public Future<Entry> findById(
             String entryId,
-            String userId,
-            Handler<AsyncResult<Entry>> handler
+            String userId
     ) {
+        Promise<Entry> promise = Promise.promise();
         JsonObject query = new JsonObject()
                 .put("_id", entryId)
                 .put("userId", userId);
 
         mongo.findOne("entries", query, null, ar -> {
             if (ar.failed()) {
-                handler.handle(Future.failedFuture(ar.cause()));
+                promise.fail(ar.cause());
                 return;
             }
 
             JsonObject doc = ar.result();
 
             if (doc == null) {
-                handler.handle(Future.succeededFuture(null));
+                promise.complete(null);
                 return;
             }
 
-            handler.handle(Future.succeededFuture(Entry.from(doc)));
+            promise.complete(Entry.from(doc));
         });
+        return promise.future();
     }
 
 
-    public void updateEntry(
+    public Future<Void> updateEntry(
             String entryId,
             String userId,
             String caption,
             List<String> addAssetIds,
-            List<String> removeAssetIds,
-            Handler<AsyncResult<Void>> handler
+            List<String> removeAssetIds
     ) {
+        Promise<Void> promise = Promise.promise();
         JsonObject update = new JsonObject();
 
         if (caption != null) {
@@ -86,23 +91,33 @@ public class EntryRepository {
                 "entries",
                 new JsonObject().put("_id", entryId).put("userId", userId),
                 updateDoc,
-                ar -> handler.handle(ar.succeeded()
-                        ? Future.succeededFuture()
-                        : Future.failedFuture(ar.cause()))
+                ar -> {
+                    if (ar.succeeded()) {
+                        promise.complete();
+                    } else {
+                        promise.fail(ar.cause());
+                    }
+                }
         );
+        return promise.future();
     }
 
-    public void delete(
+    public Future<Void> delete(
             String entryId,
-            String userId,
-            Handler<AsyncResult<Void>> handler
+            String userId
     ) {
+        Promise<Void> promise = Promise.promise();
         mongo.removeDocument(
                 "entries",
                 new JsonObject().put("_id", entryId).put("userId", userId),
-                ar -> handler.handle(ar.succeeded()
-                        ? Future.succeededFuture()
-                        : Future.failedFuture(ar.cause()))
+                ar -> {
+                    if (ar.succeeded()) {
+                        promise.complete();
+                    } else {
+                        promise.fail(ar.cause());
+                    }
+                }
         );
+        return promise.future();
     }
 }

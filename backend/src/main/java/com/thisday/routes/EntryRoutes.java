@@ -31,7 +31,7 @@ public class EntryRoutes {
                     String userId = ctx.<JsonObject>get("authUser").getString("sub");
                     String caption = ctx.request().getFormAttribute("caption");
                     List<MultipartForm> forms = buildForms(ctx.fileUploads(), userId);
-                    entryService.createEntry(userId, caption, forms, ar -> {
+                    entryService.createEntry(userId, caption, forms).onComplete(ar -> {
                         if (ar.failed()) {
                             ctx.fail(500);
                             log.error("Create entry failed", ar.cause());
@@ -71,16 +71,16 @@ public class EntryRoutes {
                             userId,
                             date,
                             caption,
-                            forms,
-                            ar -> {
-                                if (ar.failed()) {
-                                    ctx.fail(500);
-                                    log.error("Create past entry failed", ar.cause());
-                                } else {
-                                    ctx.response().setStatusCode(201).end();
-                                    log.info("entries have been added");
-                                }
-                            });
+                            forms
+                    ).onComplete(ar -> {
+                        if (ar.failed()) {
+                            ctx.fail(500);
+                            log.error("Create past entry failed", ar.cause());
+                        } else {
+                            ctx.response().setStatusCode(201).end();
+                            log.info("entries have been added");
+                        }
+                    });
                 });
 
         // UPDATE ENTRY (caption + add/remove media)
@@ -107,15 +107,15 @@ public class EntryRoutes {
                             userId,
                             caption,
                             newMedia,
-                            removeAssetIds,
-                            ar -> {
-                                if (ar.failed()) {
-                                    log.error("Update entry failed", ar.cause());
-                                    ctx.fail(500);
-                                } else {
-                                    ctx.response().setStatusCode(204).end();
-                                }
-                            });
+                            removeAssetIds
+                    ).onComplete(ar -> {
+                        if (ar.failed()) {
+                            log.error("Update entry failed", ar.cause());
+                            ctx.fail(500);
+                        } else {
+                            ctx.response().setStatusCode(204).end();
+                        }
+                    });
                 });
 
         // DELETE ENTRY (hard delete)
@@ -126,7 +126,7 @@ public class EntryRoutes {
                     String entryId = ctx.pathParam("entryId");
                     String userId = ctx.<JsonObject>get("authUser").getString("sub");
 
-                    entryService.deleteEntry(entryId, userId, ar -> {
+                    entryService.deleteEntry(entryId, userId).onComplete(ar -> {
                         if (ar.failed()) {
                             log.error("Delete entry failed", ar.cause());
                             ctx.fail(500);

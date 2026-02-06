@@ -1,8 +1,7 @@
 package com.thisday.services;
 
 import com.thisday.repositories.EntryReadRepository;
-import io.vertx.core.AsyncResult;
-import io.vertx.core.Handler;
+import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
 import org.slf4j.Logger;
@@ -19,83 +18,72 @@ public class EntryReadService {
         this.repository = new EntryReadRepository(vertx);
     }
 
-    public void getEntriesForDay(
+    public Future<JsonArray> getEntriesForDay(
             String userId,
             int year,
             int month,
-            int day,
-            Handler<AsyncResult<JsonArray>> handler
+            int day
     ) {
         log.debug(
                 "Service: getEntriesForDay user={} date={}-{}-{}",
                 userId, year, month, day
         );
 
-        repository.findByExactDay(userId, year, month, day)
-                .onComplete(handler);
+        return repository.findByExactDay(userId, year, month, day);
     }
 
-    public void getSameDayPreviousMonths(
+    public Future<JsonArray> getSameDayPreviousMonths(
             String userId,
             int year,
             int month,
-            int day,
-            Handler<AsyncResult<JsonArray>> handler
+            int day
     ) {
         log.debug(
                 "Service: getSameDayPreviousMonths user={} date={}-{}-{}",
                 userId, year, month, day
         );
 
-        repository.findSameDayPreviousMonths(userId, year, month, day)
-                .onComplete(handler);
+        return repository.findSameDayPreviousMonths(userId, year, month, day);
     }
 
-    public void getSameDayPreviousYears(
+    public Future<JsonArray> getSameDayPreviousYears(
             String userId,
             int year,
             int month,
-            int day,
-            Handler<AsyncResult<JsonArray>> handler
+            int day
     ) {
         log.debug(
                 "Service: getSameDayPreviousYears user={} dayMonth={}-{}",
                 userId, month, day
         );
 
-        repository.findSameDayBestEntriesPerYear(userId, year, month, day)
-                .onComplete(handler);
+        return repository.findSameDayBestEntriesPerYear(userId, year, month, day);
     }
 
-    public void getTodaySummary(
+    public Future<JsonArray> getTodaySummary(
             String userId,
             int year,
             int month,
-            int day,
-            Handler<AsyncResult<JsonArray>> handler
+            int day
     ) {
         log.debug(
                 "Service: getTodaySummary user={} date={}-{}-{}",
                 userId, year, month, day
         );
 
-        repository.findTodaySummary(userId, year, month, day)
-                .onComplete(handler);
+        return repository.findTodaySummary(userId, year, month, day);
     }
 
-
-    public void getCalendarEntries(
+    public Future<JsonArray> getCalendarEntries(
             String userId,
             int year,
-            int month,
-            Handler<AsyncResult<JsonArray>> handler
+            int month
     ) {
         log.debug(
                 "Service: getCalendarEntries user={} year={} month={}",
                 userId, year, month
         );
 
-        repository.findCalendarEntries(userId, year, month)
-                .onComplete(handler);
+        return repository.findCalendarEntries(userId, year, month);
     }
 }

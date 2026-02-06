@@ -3,7 +3,7 @@ package com.thisday.services;
 import com.thisday.immich.ImmichClient;
 import com.thisday.models.Entry;
 import com.thisday.repositories.EntryRepository;
-import io.vertx.core.*;
+import io.vertx.core.Future;
 import io.vertx.ext.web.multipart.MultipartForm;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,16 +29,11 @@ public class EntryService {
     }
 
     // CREATE
-    public void createEntry(
+    public Future<Void> createEntry(
             String userId,
             String caption,
-            List<MultipartForm> media,
-            Handler<AsyncResult<Void>> handler) {
-        uploadAssets(media, new ArrayList<>(), ar -> {
-            if (ar.failed()) {
-                handler.handle(Future.failedFuture(ar.cause()));
-                return;
-            }
+            List<MultipartForm> media) {
+        return uploadAssets(media, new ArrayList<>()).compose(assetIds -> {
 
             ZoneId IST = ZoneId.of("Asia/Kolkata");
             LocalDate todayIst = LocalDate.now(IST);
@@ -46,7 +41,7 @@ public class EntryService {
             Entry entry = new Entry();
             entry.userId = userId;
             entry.caption = caption;
-            entry.immichAssetIds = ar.result();
+            entry.immichAssetIds = assetIds;
 
             entry.date = todayIst;
 
@@ -57,35 +52,27 @@ public class EntryService {
 
             entry.createdAt = Instant.now(); // UTC
 
-            entryRepository.insert(entry, handler);
+            return entryRepository.insert(entry);
         });
     }
 
-    public void createPastEntry(
+    public Future<Void> createPastEntry(
             String userId,
             LocalDate date,
             String caption,
-            List<MultipartForm> media,
-            Handler<AsyncResult<Void>> handler) {
+            List<MultipartForm> media) {
         ZoneId IST = ZoneId.of("Asia/Kolkata");
         LocalDate todayIst = LocalDate.now(IST);
 
         if (date.isAfter(todayIst)) {
-            handler.handle(
-                    Future.failedFuture("Cannot create entry for a future date"));
-            return;
+            return Future.failedFuture("Cannot create entry for a future date");
         }
 
-        uploadAssets(media, new ArrayList<>(), ar -> {
-            if (ar.failed()) {
-                handler.handle(Future.failedFuture(ar.cause()));
-                return;
-            }
-
+        return uploadAssets(media, new ArrayList<>()).compose(assetIds -> {
             Entry entry = new Entry();
             entry.userId = userId;
             entry.caption = caption;
-            entry.immichAssetIds = ar.result();
+            entry.immichAssetIds = assetIds;
             entry.date = date;
             entry.dayMonth = String.format(
                     "%02d-%02d",
@@ -93,73 +80,56 @@ public class EntryService {
                     date.getDayOfMonth());
             entry.createdAt = Instant.now();
 
-            entryRepository.insert(entry, handler);
+            return entryRepository.insert(entry);
         });
     }
 
     // UPDATE
-    public void updateEntry(
+    public Future<Void> updateEntry(
             String entryId,
             String userId,
             String caption,
             List<MultipartForm> newMedia,
-            List<String> removeAssetIds,
-            Handler<AsyncResult<Void>> handler) {
-        uploadAssets(newMedia, new ArrayList<>(), ar -> {
-            if (ar.failed()) {
-                handler.handle(Future.failedFuture(ar.cause()));
-                return;
-            }
-
-            entryRepository.updateEntry(
-                    entryId,
-                    userId,
-                    caption,
-                    ar.result(),
-                    removeAssetIds,
-                    handler);
-        });
+            List<String> removeAssetIds) {
+        return uploadAssets(newMedia, new ArrayList<>()).compose(assetIds ->
+                entryRepository.updateEntry(
+                        entryId,
+                        userId,
+                        caption,
+                        assetIds,
+                        removeAssetIds
+                )
+        );
     }
 
     // DELETE (hard)
-    public void deleteEntry(
+    public Future<Void> deleteEntry(
             String entryId,
-            String userId,
-            Handler<AsyncResult<Void>> handler) {
-        entryRepository.findById(entryId, userId, ar -> {
-            if (ar.failed() || ar.result() == null) {
-                handler.handle(Future.failedFuture("Entry not found"));
-                return;
+            String userId) {
+        return entryRepository.findById(entryId, userId).compose(entry -> {
+            if (entry == null) {
+                return Future.failedFuture("Entry not found");
             }
-
-            Entry entry = ar.result();
 
             // Optional: delete assets from Immich here
             // immichClient.deleteAssets(entry.immichAssetIds);
 
-            entryRepository.delete(entryId, userId, handler);
+            return entryRepository.delete(entryId, userId);
         });
     }
 
-    private void uploadAssets(
+    private Future<List<String>> uploadAssets(
             List<MultipartForm> forms,
-            List<String> assetIds,
-            Handler<AsyncResult<List<String>>> handler) {
+            List<String> assetIds) {
         if (forms.isEmpty()) {
-            handler.handle(Future.succeededFuture(assetIds));
-            return;
+            return Future.succeededFuture(assetIds);
         }
 
         MultipartForm form = forms.remove(0);
 
-        immichClient.uploadAsset(form, ar -> {
-            if (ar.failed()) {
-                handler.handle(Future.failedFuture(ar.cause()));
-                return;
-            }
-
-            assetIds.add(ar.result());
-            uploadAssets(forms, assetIds, handler);
+        return immichClient.uploadAsset(form).compose(assetId -> {
+            assetIds.add(assetId);
+            return uploadAssets(forms, assetIds);
         });
     }
 }

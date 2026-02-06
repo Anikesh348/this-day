@@ -1,7 +1,9 @@
 package com.thisday.immich;
 
 import com.thisday.config.AppConfig;
-import io.vertx.core.*;
+import io.vertx.core.Future;
+import io.vertx.core.Promise;
+import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
@@ -33,12 +35,13 @@ public class ImmichClient {
      * UPLOAD
      * ============================================================
      */
-    public void uploadAsset(
-            MultipartForm form,
-            Handler<AsyncResult<String>> handler) {
+    public Future<String> uploadAsset(
+            MultipartForm form) {
 
         String url = baseUrl + "/api/assets";
         long startTime = System.currentTimeMillis();
+
+        Promise<String> promise = Promise.promise();
 
         client.postAbs(url)
                 .putHeader("x-api-key", apiKey)
@@ -48,26 +51,27 @@ public class ImmichClient {
 
                     if (ar.failed()) {
                         log.error("Immich upload failed after {}ms", duration, ar.cause());
-                        handler.handle(Future.failedFuture(ar.cause()));
+                        promise.fail(ar.cause());
                         return;
                     }
 
                     HttpResponse<Buffer> response = ar.result();
 
                     if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                        handler.handle(Future.failedFuture(
-                                "Immich upload failed: " + response.statusCode() + " " + response.bodyAsString()));
+                        promise.fail(
+                                "Immich upload failed: " + response.statusCode() + " " + response.bodyAsString());
                         return;
                     }
 
                     try {
                         String assetId = response.bodyAsJsonObject().getString("id");
                         log.info("Immich upload success assetId={} duration={}ms", assetId, duration);
-                        handler.handle(Future.succeededFuture(assetId));
+                        promise.complete(assetId);
                     } catch (Exception e) {
-                        handler.handle(Future.failedFuture(e));
+                        promise.fail(e);
                     }
                 });
+        return promise.future();
     }
 
     public void streamAsset(RoutingContext ctx, String assetId, String type) {

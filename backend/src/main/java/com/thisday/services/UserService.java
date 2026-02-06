@@ -2,7 +2,7 @@ package com.thisday.services;
 
 import com.thisday.models.User;
 import com.thisday.repositories.UserRepository;
-import io.vertx.core.*;
+import io.vertx.core.Future;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,19 +18,15 @@ public class UserService {
         log.info("UserService initialized");
     }
 
-    public void syncUser(User user) {
+    public Future<Void> syncUser(User user) {
         log.debug("Syncing user [id={}]", user.id);
 
-        repo.upsert(user, ar -> {
-            if (ar.failed()) {
-                log.error(
+        return repo.upsert(user)
+                .onFailure(cause -> log.error(
                         "Failed to sync user [id={}]",
                         user.id,
-                        ar.cause()
-                );
-            } else {
-                log.debug("User synced successfully [id={}]", user.id);
-            }
-        });
+                        cause
+                ))
+                .onSuccess(v -> log.debug("User synced successfully [id={}]", user.id));
     }
 }

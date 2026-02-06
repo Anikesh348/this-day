@@ -16,6 +16,7 @@ import com.thisday.services.MediaService;
 import com.thisday.services.UserService;
 import io.vertx.core.*;
 import io.vertx.core.http.HttpMethod;
+import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
@@ -60,6 +61,31 @@ public class ThisDayVerticle extends AbstractVerticle {
 
         log.info("Initializing MongoDB");
         var mongo = MongoProvider.get(vertx);
+
+        router.get("/health").handler(ctx -> {
+            JsonObject cmd = new JsonObject().put("ping", 1);
+            mongo.runCommand("ping", cmd, ar -> {
+                if (ar.succeeded()) {
+                    ctx.response()
+                            .setStatusCode(200)
+                            .putHeader("Content-Type", "application/json")
+                            .end(new JsonObject()
+                                    .put("status", "ok")
+                                    .put("mongo", "up")
+                                    .encode());
+                } else {
+                    log.warn("Health check failed: MongoDB ping error", ar.cause());
+                    ctx.response()
+                            .setStatusCode(503)
+                            .putHeader("Content-Type", "application/json")
+                            .end(new JsonObject()
+                                    .put("status", "degraded")
+                                    .put("mongo", "down")
+                                    .put("error", String.valueOf(ar.cause().getMessage()))
+                                    .encode());
+                }
+            });
+        });
 
         var userRepo = new UserRepository(mongo);
         var userService = new UserService(userRepo);

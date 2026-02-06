@@ -42,7 +42,7 @@ public class AuthHandler implements Handler<RoutingContext> {
 
         String token = header.substring(7);
 
-        verifier.verify(token, ar -> {
+        verifier.verify(token).onComplete(ar -> {
             if (ar.failed()) {
                 log.warn(
                         "JWT verification failed [method={}, path={}]: {}",

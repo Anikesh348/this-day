@@ -25,25 +25,20 @@ public class ClerkJwtVerifier {
         log.info("ClerkJwtVerifier initialized");
     }
 
-    public void verify(String token, Handler<AsyncResult<JsonObject>> handler) {
+    public Future<JsonObject> verify(String token) {
         if (jwksCache == null) {
             log.info("JWKS cache empty, fetching JWKS from Clerk");
-            fetchJwks(ar -> {
-                if (ar.failed()) {
-                    log.error("Failed to fetch JWKS from Clerk", ar.cause());
-                    handler.handle(Future.failedFuture(ar.cause()));
-                    return;
-                }
-                log.info("JWKS fetched and cached successfully");
-                verifyInternal(token, handler);
-            });
-        } else {
-            log.debug("Using cached JWKS for token verification");
-            verifyInternal(token, handler);
+            return fetchJwks()
+                    .onSuccess(v -> log.info("JWKS fetched and cached successfully"))
+                    .compose(v -> verifyInternal(token));
         }
+
+        log.debug("Using cached JWKS for token verification");
+        return verifyInternal(token);
     }
 
-    private void fetchJwks(Handler<AsyncResult<Void>> handler) {
+    private Future<Void> fetchJwks() {
+        Promise<Void> promise = Promise.promise();
         WebClient.create(vertx)
                 .getAbs(AppConfig.CLERK_JWKS_URL)
                 .send(ar -> {
@@ -53,17 +48,18 @@ public class ClerkJwtVerifier {
                                 AppConfig.CLERK_JWKS_URL,
                                 ar.cause()
                         );
-                        handler.handle(Future.failedFuture(ar.cause()));
+                        promise.fail(ar.cause());
                         return;
                     }
                     jwksCache = ar.result().bodyAsJsonObject();
                     log.info("JWKS loaded into memory cache");
-                    handler.handle(Future.succeededFuture());
+                    promise.complete();
                 });
+        return promise.future();
     }
 
-    private void verifyInternal(String token, Handler<AsyncResult<JsonObject>> handler) {
-        try {
+    private Future<JsonObject> verifyInternal(String token) {
+        return vertx.executeBlocking(() -> {
             DecodedJWT jwt = JWT.decode(token);
 
             log.debug(
@@ -105,10 +101,7 @@ public class ClerkJwtVerifier {
 
             log.debug("JWT claims extracted successfully");
 
-            handler.handle(Future.succeededFuture(claimsJson));
-        } catch (Exception e) {
-            log.warn("JWT verification failed", e);
-            handler.handle(Future.failedFuture(e));
-        }
+            return claimsJson;
+        }).onFailure(cause -> log.warn("JWT verification failed", cause));
     }
 }
