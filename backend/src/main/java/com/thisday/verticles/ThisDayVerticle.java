@@ -45,7 +45,7 @@ public class ThisDayVerticle extends AbstractVerticle {
 
             ctx.response().putHeader(
                     "Access-Control-Allow-Methods",
-                    "GET, POST, PUT, DELETE, OPTIONS"
+                    "GET, POST, PUT, DELETE, OPTIONS, HEAD"
             );
             ctx.response().putHeader(
                     "Access-Control-Allow-Headers",
