@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter, useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { Screen } from "@/components/Screen";
@@ -22,18 +22,26 @@ interface Entry {
 
 export default function TodayScreen() {
   const router = useRouter();
+  const { date } = useLocalSearchParams<{ date?: string }>();
 
   const [today, setToday] = useState<Entry | null>(null);
   const [previous, setPrevious] = useState<Entry | null>(null);
   const [loading, setLoading] = useState(true);
+  const [videoIds, setVideoIds] = useState<Record<string, true>>({});
+  const checkedIds = useRef(new Set<string>());
+
+  const targetDate = useMemo(() => {
+    if (!date) return new Date();
+    const parsed = new Date(date);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  }, [date]);
 
   const loadData = async () => {
     setLoading(true);
 
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = d.getMonth() + 1;
-    const day = d.getDate();
+    const y = targetDate.getFullYear();
+    const m = targetDate.getMonth() + 1;
+    const day = targetDate.getDate();
 
     const [todayRes, yearRes, monthRes] = await Promise.allSettled([
       getSameDaySummary(y, m, day),
@@ -64,15 +72,48 @@ export default function TodayScreen() {
   useFocusEffect(
     useCallback(() => {
       loadData();
-    }, []),
+    }, [targetDate]),
   );
 
-  const openDay = (date: string) => {
+  useEffect(() => {
+    const ids = [
+      today?.immichAssetIds?.[0],
+      previous?.immichAssetIds?.[0],
+    ].filter(Boolean) as string[];
+
+    const pending = ids.filter((id) => !checkedIds.current.has(id));
+    if (pending.length === 0) return;
+
+    const fetchType = async (assetId: string) => {
+      checkedIds.current.add(assetId);
+      try {
+        const res = await fetch(
+          apiUrl(`/api/media/immich/${assetId}?type=full`),
+          { method: "HEAD" }
+        );
+        const type = res.headers.get("content-type") ?? "";
+        if (type.startsWith("video/")) {
+          setVideoIds((prev) =>
+            prev[assetId] ? prev : { ...prev, [assetId]: true }
+          );
+        }
+      } catch {
+        // Best-effort only
+      }
+    };
+
+    pending.forEach((id) => {
+      void fetchType(id);
+    });
+  }, [today, previous]);
+
+  const openDay = (entryDate: string) => {
+    const fromSource = date ? "calendar" : "today";
     router.push({
       pathname: "day/[date]",
       params: {
-        date,
-        from: "today",
+        date: entryDate,
+        from: fromSource,
       },
     });
   };
@@ -100,12 +141,19 @@ export default function TodayScreen() {
         </View>
 
         {assetId && (
-          <Image
-            source={{
-              uri: apiUrl(`/api/media/immich/${assetId}?type=thumbnail`),
-            }}
-            style={styles.image}
-          />
+          <View style={styles.imageWrap}>
+            <Image
+              source={{
+                uri: apiUrl(`/api/media/immich/${assetId}?type=thumbnail`),
+              }}
+              style={styles.image}
+            />
+            {videoIds[assetId] && (
+              <View style={styles.videoBadge}>
+                <Ionicons name="play" size={16} color="white" />
+              </View>
+            )}
+          </View>
         )}
 
         {hasCaption && (
@@ -139,7 +187,11 @@ export default function TodayScreen() {
         <View style={styles.headerRow}>
           <View style={styles.headerText}>
             <Title>This Day</Title>
-            <Muted style={styles.subtitle}>Private. Calm. Timeless.</Muted>
+            {date ? (
+              <Muted style={styles.subtitle}>{formatDate(date)}</Muted>
+            ) : (
+              <Muted style={styles.subtitle}>Private. Calm. Timeless.</Muted>
+            )}
           </View>
 
           <Pressable
@@ -175,7 +227,9 @@ export default function TodayScreen() {
         onPress={() =>
           router.push({
             pathname: "/add",
-            params: { from: "today" },
+            params: date
+              ? { from: "day", mode: "backfill", date, fromDay: "calendar" }
+              : { from: "today" },
           })
         }
       >
@@ -256,8 +310,29 @@ const styles = StyleSheet.create({
   image: {
     width: "100%",
     height: 230,
-    borderRadius: 18,
     backgroundColor: "#111",
+  },
+
+  imageWrap: {
+    width: "100%",
+    height: 230,
+    borderRadius: 18,
+    overflow: "hidden",
+    position: "relative",
+  },
+
+  videoBadge: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   captionPreview: {

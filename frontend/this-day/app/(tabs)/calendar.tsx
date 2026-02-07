@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import {
@@ -13,6 +14,7 @@ import { CalendarList } from "react-native-calendars";
 import { getCalendar } from "@/services/entries";
 import { Colors } from "@/theme/colors";
 import { apiUrl } from "@/services/apiBase";
+import { Title, Muted } from "@/components/Text";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -95,6 +97,16 @@ export default function CalendarScreen() {
     }, [todayString, loadMonth])
   );
 
+  const refreshCalendar = useCallback(() => {
+    const [year, month] = todayString.split("-").map(Number);
+    const prev = getPreviousMonth(year, month);
+
+    loadedMonths.current.clear();
+    setEntries({});
+    loadMonth(year, month);
+    loadMonth(prev.year, prev.month);
+  }, [todayString, loadMonth]);
+
   /**
    * ✅ Frozen day renderer (no layout changes ever)
    */
@@ -114,10 +126,9 @@ export default function CalendarScreen() {
             if (isFuture) return;
 
             router.push({
-              pathname: "day/[date]",
+              pathname: "/today",
               params: {
                 date: date.dateString,
-                from: "calendar",
               },
             });
           }}
@@ -180,6 +191,21 @@ export default function CalendarScreen() {
 
   return (
     <View style={styles.container}>
+      <View style={styles.headerRow}>
+        <View style={styles.headerText}>
+          <Title>Calendar</Title>
+          <Muted style={styles.subtitle}>Browse by day</Muted>
+        </View>
+        <Pressable
+          onPress={refreshCalendar}
+          style={({ pressed }) => [
+            styles.refreshBtn,
+            pressed && { opacity: 0.6 },
+          ]}
+        >
+          <Ionicons name="refresh" size={26} color={Colors.dark.textMuted} />
+        </Pressable>
+      </View>
       <CalendarList
         current={currentMonth}
         pastScrollRange={12}
@@ -232,6 +258,25 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.dark.background,
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: 18,
+    paddingHorizontal: MARGIN,
+    marginBottom: 8,
+  },
+  headerText: {
+    alignItems: "flex-start",
+  },
+  subtitle: {
+    marginTop: 4,
+    opacity: 0.75,
+  },
+  refreshBtn: {
+    padding: 8,
+    borderRadius: 20,
   },
   dayCell: {
     width: DAY_SIZE + GAP / 2,

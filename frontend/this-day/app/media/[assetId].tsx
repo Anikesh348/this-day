@@ -15,7 +15,7 @@ import { Video, ResizeMode, AVPlaybackStatus } from "expo-av";
 import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import { LinearGradient } from "expo-linear-gradient";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getDayEntries } from "@/services/entries";
@@ -92,17 +92,24 @@ export default function MediaViewerScreen() {
           }
 
           if (!cancelled && nextItems.length > 0) {
+            const foundIndex = nextItems.findIndex(
+              (item) => item.id === assetId
+            );
+            const nextIndex = foundIndex >= 0 ? foundIndex : 0;
             setItems(nextItems);
+            setActiveIndex(nextIndex);
             return;
           }
         }
 
         if (!cancelled) {
           setItems([{ id: assetId, caption }]);
+          setActiveIndex(0);
         }
       } catch {
         if (!cancelled) {
           setItems([{ id: assetId, caption }]);
+          setActiveIndex(0);
         }
       } finally {
         if (!cancelled) setItemsLoading(false);
@@ -117,23 +124,17 @@ export default function MediaViewerScreen() {
   /* =========================================================
    * Sync active index to assetId
    * ======================================================= */
-  const initialIndex = useMemo(() => {
-    const found = items.findIndex((item) => item.id === assetId);
-    return found >= 0 ? found : 0;
-  }, [items, assetId]);
-
   useEffect(() => {
     if (items.length === 0) return;
-    setActiveIndex(initialIndex);
     requestAnimationFrame(() => {
       try {
         listRef.current?.scrollToIndex({
-          index: initialIndex,
+          index: activeIndex,
           animated: false,
         });
       } catch {}
     });
-  }, [items, initialIndex]);
+  }, [items, activeIndex]);
 
   /* =========================================================
    * Controls toggle
@@ -347,6 +348,7 @@ function MediaSlide({
 }) {
   const mediaUrl = apiUrl(`/api/media/immich/${item.id}?type=full`);
   const videoRef = useRef<Video>(null);
+  const webVideoRef = useRef<any>(null);
   const imageOpacity = useRef(new Animated.Value(0)).current;
 
   const [mediaType, setMediaType] = useState<MediaKind | null>(null);
@@ -354,6 +356,8 @@ function MediaSlide({
   const [error, setError] = useState(false);
   const [localVideoUri, setLocalVideoUri] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [webAutoplayBlocked, setWebAutoplayBlocked] = useState(false);
+  const [retryToken, setRetryToken] = useState(0);
 
   /* =========================================================
    * Detect media type
@@ -382,7 +386,7 @@ function MediaSlide({
     return () => {
       cancelled = true;
     };
-  }, [item.id]);
+  }, [item.id, retryToken]);
 
   /* =========================================================
    * Optional video preload (only when active)
@@ -421,13 +425,19 @@ function MediaSlide({
     return () => {
       cancelled = true;
     };
-  }, [mediaType, item.id, isActive]);
+  }, [mediaType, item.id, isActive, retryToken]);
 
   /* =========================================================
    * Playback state (iOS replay fix included)
    * ======================================================= */
   const onPlaybackStatus = (status: AVPlaybackStatus) => {
-    if (!status.isLoaded) return;
+    if (!status.isLoaded) {
+      if ("error" in status) {
+        setError(true);
+        setLoading(false);
+      }
+      return;
+    }
 
     setIsPlaying(status.isPlaying);
 
@@ -438,6 +448,59 @@ function MediaSlide({
   };
 
   /* =========================================================
+   * Auto play/pause when slide becomes active
+   * ======================================================= */
+  useEffect(() => {
+    if (mediaType !== "video" || Platform.OS === "web") return;
+
+    let cancelled = false;
+    requestAnimationFrame(() => {
+      if (cancelled) return;
+      (async () => {
+        try {
+          if (isActive) {
+            await videoRef.current?.playAsync();
+          } else {
+            await videoRef.current?.pauseAsync();
+          }
+        } catch {
+          // Best-effort only; ignore play/pause errors during transitions.
+        }
+      })();
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isActive, mediaType, localVideoUri]);
+
+  /* =========================================================
+   * Web autoplay/pause handling
+   * ======================================================= */
+  useEffect(() => {
+    if (mediaType !== "video" || Platform.OS !== "web") return;
+    const el = webVideoRef.current as
+      | (HTMLVideoElement & { play?: () => Promise<void> })
+      | null;
+    if (!el) return;
+
+    if (isActive && !webAutoplayBlocked) {
+      try {
+        el.muted = false;
+      } catch {}
+      const maybePromise = el.play?.();
+      if (maybePromise && typeof maybePromise.catch === "function") {
+        maybePromise.catch(() => setWebAutoplayBlocked(true));
+      }
+    } else {
+      try {
+        el.pause?.();
+        el.currentTime = 0;
+      } catch {}
+    }
+  }, [isActive, mediaType, webAutoplayBlocked]);
+
+  /* =========================================================
    * Image fade-in
    * ======================================================= */
   const onImageLoad = () => {
@@ -446,6 +509,33 @@ function MediaSlide({
       duration: 250,
       useNativeDriver: true,
     }).start();
+  };
+
+  const retryLoad = () => {
+    setError(false);
+    setLoading(true);
+    setMediaType(null);
+    setLocalVideoUri(null);
+    setIsPlaying(false);
+    setWebAutoplayBlocked(false);
+    setRetryToken((t) => t + 1);
+  };
+
+  const handleWebPlayWithSound = async () => {
+    const el = webVideoRef.current as
+      | (HTMLVideoElement & { play?: () => Promise<void> })
+      | null;
+    if (!el) return;
+    try {
+      el.muted = false;
+      const maybePromise = el.play?.();
+      if (maybePromise) {
+        await maybePromise;
+      }
+      setWebAutoplayBlocked(false);
+    } catch {
+      setWebAutoplayBlocked(true);
+    }
   };
 
   return (
@@ -460,7 +550,10 @@ function MediaSlide({
               setLoading(false);
               onImageLoad();
             }}
-            onError={() => setError(true)}
+            onError={() => {
+              setError(true);
+              setLoading(false);
+            }}
           />
         </Pressable>
       )}
@@ -468,9 +561,18 @@ function MediaSlide({
       {mediaType === "video" &&
         (Platform.OS === "web" ? (
           <video
+            ref={webVideoRef}
             src={mediaUrl}
             controls
-            autoPlay
+            autoPlay={isActive}
+            muted={false}
+            playsInline
+            preload="auto"
+            onLoadedData={() => setLoading(false)}
+            onError={() => {
+              setError(true);
+              setLoading(false);
+            }}
             loop
             style={styles.webVideo}
           />
@@ -482,6 +584,8 @@ function MediaSlide({
               style={styles.media}
               resizeMode={ResizeMode.CONTAIN}
               shouldPlay={isActive}
+              isMuted={false}
+              volume={1.0}
               isLooping
               useNativeControls
               onPlaybackStatusUpdate={onPlaybackStatus}
@@ -515,7 +619,34 @@ function MediaSlide({
           <ActivityIndicator size="large" color="white" />
         </View>
       )}
-      {error && <Text style={styles.errorText}>Failed to load media</Text>}
+      {Platform.OS === "web" && isActive && webAutoplayBlocked && (
+        <View pointerEvents="box-none" style={styles.videoOverlay}>
+          <Pressable
+            onPress={handleWebPlayWithSound}
+            style={({ pressed }) => [
+              styles.videoControlButton,
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Ionicons name="volume-high" size={26} color="white" />
+          </Pressable>
+          <Text style={styles.webHintText}>Tap to play with sound</Text>
+        </View>
+      )}
+      {error && (
+        <View style={styles.errorWrap}>
+          <Text style={styles.errorText}>Failed to load media</Text>
+          <Pressable
+            onPress={retryLoad}
+            style={({ pressed }) => [
+              styles.retryButton,
+              pressed && { opacity: 0.8 },
+            ]}
+          >
+            <Text style={styles.retryText}>Retry</Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }
@@ -657,6 +788,40 @@ const styles = StyleSheet.create({
     color: "#aaa",
     textAlign: "center",
     marginTop: 20,
+  },
+
+  errorWrap: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    paddingHorizontal: 24,
+  },
+
+  retryButton: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+  },
+
+  retryText: {
+    color: Colors.dark.textPrimary,
+    fontSize: 14,
+    letterSpacing: 0.2,
+  },
+
+  webHintText: {
+    color: Colors.dark.textSecondary,
+    fontSize: 13,
+    marginTop: 10,
+    textAlign: "center",
   },
 
   loadingWrap: {

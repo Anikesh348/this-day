@@ -19,7 +19,6 @@ import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
-import io.vertx.ext.web.handler.CorsHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,30 +32,38 @@ public class ThisDayVerticle extends AbstractVerticle {
         log.info("Starting ThisDayVerticle");
 
         Router router = Router.router(vertx);
-        router.route().handler(BodyHandler.create());
-        CorsHandler corsHandler = CorsHandler.create();
-        String[] allowedOrigins = AppConfig.CORS_ALLOWED_ORIGINS.split(",");
-        for (String origin : allowedOrigins) {
-            String trimmed = origin.trim();
-            if (!trimmed.isEmpty()) {
-                corsHandler.addOrigin(trimmed);
-            }
-        }
 
-        router.route().handler(
-                corsHandler
-                        .allowedMethod(HttpMethod.GET)
-                        .allowedMethod(HttpMethod.POST)
-                        .allowedMethod(HttpMethod.OPTIONS)
-                        .allowedMethod(HttpMethod.DELETE)
-                        .allowedMethod(HttpMethod.PUT)
-                        .allowedHeader("Content-Type")
-                        .allowedHeader("Authorization")
-                        .allowedHeader("Accept")
-                        .allowedHeader("Origin")
-                        .allowedHeader("Access-Control-Request-Method")
-                        .allowedHeader("Access-Control-Request-Headers")
-        );
+        // Allow all origins (no validation) and short-circuit preflight
+        router.route().handler(ctx -> {
+            String origin = ctx.request().getHeader("Origin");
+            if (origin != null && !origin.isBlank()) {
+                ctx.response().putHeader("Access-Control-Allow-Origin", origin);
+                ctx.response().putHeader("Vary", "Origin");
+            } else {
+                ctx.response().putHeader("Access-Control-Allow-Origin", "*");
+            }
+
+            ctx.response().putHeader(
+                    "Access-Control-Allow-Methods",
+                    "GET, POST, PUT, DELETE, OPTIONS"
+            );
+            ctx.response().putHeader(
+                    "Access-Control-Allow-Headers",
+                    "Content-Type, Authorization, authorization, Accept, Origin, " +
+                            "Access-Control-Request-Method, Access-Control-Request-Headers"
+            );
+            ctx.response().putHeader("Access-Control-Allow-Credentials", "true");
+            ctx.response().putHeader("Access-Control-Max-Age", "86400");
+
+            if (ctx.request().method() == HttpMethod.OPTIONS) {
+                ctx.response().setStatusCode(204).end();
+                return;
+            }
+
+            ctx.next();
+        });
+
+        router.route().handler(BodyHandler.create());
         log.debug("Router and BodyHandler initialized");
 
         log.info("Initializing MongoDB");
