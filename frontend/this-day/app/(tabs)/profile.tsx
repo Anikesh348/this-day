@@ -105,6 +105,10 @@ export default function ProfileScreen() {
             <Body style={styles.logoutText}>Sign Out</Body>
           </Pressable>
         </View>
+
+        <View style={styles.versionBlock}>
+          <Muted style={styles.versionText}>App Version 3.0</Muted>
+        </View>
       </View>
     </Screen>
   );
@@ -214,5 +218,15 @@ const styles = StyleSheet.create({
 
   logoutText: {
     color: "#FF6B6B",
+  },
+
+  versionBlock: {
+    marginTop: 28,
+    alignItems: "center",
+  },
+
+  versionText: {
+    fontSize: 12,
+    opacity: 0.6,
   },
 });
