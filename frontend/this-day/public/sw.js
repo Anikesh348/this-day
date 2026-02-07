@@ -1,6 +1,7 @@
 /* eslint-disable no-undef */
+const CACHE_PREFIX = "thisday-";
 const CACHE_VERSION = "full-media-v1";
-const FULL_MEDIA_CACHE = `thisday-${CACHE_VERSION}`;
+const FULL_MEDIA_CACHE = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MAX_ENTRIES = 60;
 
 async function trimCache(cache) {
@@ -26,7 +27,7 @@ self.addEventListener("activate", (event) => {
       const names = await caches.keys();
       await Promise.all(
         names
-          .filter((name) => name.startsWith("thisday-") && name !== FULL_MEDIA_CACHE)
+          .filter((name) => name.startsWith(CACHE_PREFIX) && name !== FULL_MEDIA_CACHE)
           .map((name) => caches.delete(name))
       );
       await self.clients.claim();
@@ -50,13 +51,33 @@ self.addEventListener("fetch", (event) => {
     (async () => {
       const cache = await caches.open(FULL_MEDIA_CACHE);
       const cached = await cache.match(request);
-      if (cached) return cached;
+      if (cached) {
+        self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+          clients.forEach((client) =>
+            client.postMessage({
+              type: "media-cache",
+              status: "hit",
+              url: request.url,
+            })
+          );
+        });
+        return cached;
+      }
 
       const response = await fetch(request);
       if (response && response.ok) {
         cache.put(request, response.clone());
         trimCache(cache);
       }
+      self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+        clients.forEach((client) =>
+          client.postMessage({
+            type: "media-cache",
+            status: response && response.ok ? "miss" : "error",
+            url: request.url,
+          })
+        );
+      });
       return response;
     })()
   );

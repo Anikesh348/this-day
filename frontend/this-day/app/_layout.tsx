@@ -65,6 +65,22 @@ export default function RootLayout() {
     };
 
     register();
+
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; status?: string; url?: string };
+      if (data?.type === "media-cache") {
+        const status = data.status ?? "unknown";
+        const url = data.url ?? "";
+        // Logged in the browser console (useful for iOS remote debugging)
+        // eslint-disable-next-line no-console
+        console.log(`[media-cache:${status}]`, url);
+      }
+    };
+
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener("message", onMessage);
+    };
   }, []);
 
   return (

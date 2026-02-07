@@ -14,6 +14,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const [cacheClearing, setCacheClearing] = useState(false);
   const [cacheMessage, setCacheMessage] = useState<string | null>(null);
+  const CACHE_PREFIX = "thisday-";
 
   const logout = async () => {
     await signOut();
@@ -32,9 +33,13 @@ export default function ProfileScreen() {
     setCacheMessage(null);
     try {
       const names = await window.caches.keys();
-      const targets = names.filter((name) => name.startsWith("thisday-"));
+      const targets = names.filter((name) => name.startsWith(CACHE_PREFIX));
       await Promise.all(targets.map((name) => window.caches.delete(name)));
-      setCacheMessage("Media cache cleared.");
+      setCacheMessage(
+        targets.length > 0
+          ? `Cleared ${targets.length} cache${targets.length > 1 ? "s" : ""}.`
+          : "No media caches found."
+      );
     } catch {
       setCacheMessage("Failed to clear cache. Try again.");
     } finally {
