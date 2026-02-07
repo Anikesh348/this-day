@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Image,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,6 +18,7 @@ import { Body, Muted, Title } from "@/components/Text";
 import { deleteEntry, getDayEntries } from "@/services/entries";
 import { Colors } from "@/theme/colors";
 import { apiUrl } from "@/services/apiBase";
+import { ensureMediaCached } from "@/services/mediaCache";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 const GRID_GAP = 8;
@@ -92,7 +94,11 @@ export default function DayViewScreen() {
             prev[assetId] ? prev : { ...prev, [assetId]: true }
           );
         } else if (type.startsWith("image/")) {
-          await Image.prefetch(mediaUrl);
+          if (Platform.OS === "web") {
+            await ensureMediaCached(mediaUrl);
+          } else {
+            await Image.prefetch(mediaUrl);
+          }
         }
       } catch {
         // Best-effort only; ignore failures to keep UI responsive.
