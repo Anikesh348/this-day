@@ -48,7 +48,7 @@ export default function AddEntryScreen() {
   const [isEditorFocused, setIsEditorFocused] = useState(false);
 
   const [caption, setCaption] = useState("");
-  const [editorHeight, setEditorHeight] = useState(140);
+  const EDITOR_HEIGHT = 180;
 
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -86,7 +86,6 @@ export default function AddEntryScreen() {
       setSubmitting(false);
       setEntryMode("today");
       setPastDateString(date ?? toISTDateString(new Date()));
-      setEditorHeight(140);
       setShowSuccess(false);
       setCountdown(3);
       setTempDate(null);
@@ -203,8 +202,22 @@ export default function AddEntryScreen() {
     year: "numeric",
   });
 
+  const setDateFromPreset = (dateToSet: Date) => {
+    const istDateString = toISTDateString(dateToSet);
+    setTempDate(dateToSet);
+    setPastDateString(istDateString);
+  };
+
+  const quickPresets = [
+    { label: "Today", offsetDays: 0 },
+    { label: "Yesterday", offsetDays: -1 },
+    { label: "Last Week", offsetDays: -7 },
+    { label: "Last Month", offsetDays: -30 },
+  ];
+
   return (
     <Screen>
+      <View style={styles.root}>
       {/* HEADER */}
       <View style={styles.header}>
         <Pressable onPress={handleBack}>
@@ -236,7 +249,22 @@ export default function AddEntryScreen() {
 
       {/* DATE LABEL */}
       <View style={styles.dateLabel}>
-        <Muted>{new Date(`${displayDate}T00:00:00`).toDateString()}</Muted>
+        <Pressable
+          onPress={() => {
+            if (!isBackfill) return;
+            setTempDate(new Date(`${pastDateString}T00:00:00`));
+            setShowDatePicker(true);
+          }}
+          style={[
+            styles.datePill,
+            !isBackfill && { opacity: 0.6 },
+          ]}
+        >
+          <Ionicons name="calendar-outline" size={16} color="#8AA4FF" />
+          <Muted style={styles.dateText}>
+            {new Date(`${displayDate}T00:00:00`).toDateString()}
+          </Muted>
+        </Pressable>
       </View>
 
       {/* ACTION ROW */}
@@ -325,6 +353,7 @@ export default function AddEntryScreen() {
             ref={inputRef}
             autoFocus
             multiline
+            scrollEnabled
             value={caption}
             onChangeText={setCaption}
             placeholder="What's new?"
@@ -333,12 +362,9 @@ export default function AddEntryScreen() {
               setIsEditorFocused(true);
             }}
             onBlur={() => setIsEditorFocused(false)}
-            onContentSizeChange={(e) =>
-              setEditorHeight(Math.max(140, e.nativeEvent.contentSize.height))
-            }
             style={[
               styles.editor,
-              { height: editorHeight },
+              { height: EDITOR_HEIGHT },
               Platform.OS === "web" && styles.editorWeb,
               Platform.OS === "web" &&
                 isEditorFocused &&
@@ -352,16 +378,43 @@ export default function AddEntryScreen() {
       <Modal transparent visible={showDatePicker} animationType="fade">
         <View style={styles.pickerOverlay}>
           <View style={styles.pickerCard}>
+            <View style={styles.pickerHeader}>
+              <Title style={styles.pickerTitle}>Pick a date</Title>
+              <Muted>{new Date(`${pastDateString}T00:00:00`).toDateString()}</Muted>
+            </View>
+
+            <View style={styles.pickerChips}>
+              {quickPresets.map((preset) => {
+                const d = new Date();
+                d.setDate(d.getDate() + preset.offsetDays);
+                return (
+                  <Pressable
+                    key={preset.label}
+                    onPress={() => setDateFromPreset(d)}
+                    style={({ pressed }) => [
+                      styles.chip,
+                      pressed && { opacity: 0.8 },
+                    ]}
+                  >
+                    <Body style={styles.chipText}>{preset.label}</Body>
+                  </Pressable>
+                );
+              })}
+            </View>
+
             {Platform.OS === "web" ? (
-              <input
-                type="date"
-                value={pastDateString}
-                max={new Date().toISOString().slice(0, 10)}
-                onChange={(e) => {
-                  setPastDateString(e.target.value);
-                  setTempDate(new Date(`${e.target.value}T00:00:00`));
-                }}
-              />
+              <View style={styles.webDateInputWrap}>
+                <input
+                  type="date"
+                  value={pastDateString}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => {
+                    setPastDateString(e.target.value);
+                    setTempDate(new Date(`${e.target.value}T00:00:00`));
+                  }}
+                  style={styles.webDateInput as any}
+                />
+              </View>
             ) : (
               <DateTimePicker
                 value={tempDate ?? new Date()}
@@ -403,11 +456,16 @@ export default function AddEntryScreen() {
           </View>
         </View>
       </Modal>
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    overflow: "hidden",
+  },
   header: {
     paddingHorizontal: 6,
     paddingTop: 36,
@@ -426,6 +484,21 @@ const styles = StyleSheet.create({
   toggleBtn: { flex: 1, paddingVertical: 6, alignItems: "center" },
   toggleActive: { backgroundColor: "#2C3440", borderRadius: 12 },
   dateLabel: { paddingHorizontal: 16, paddingBottom: 10, paddingTop: 10 },
+  datePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: "rgba(108,140,255,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(108,140,255,0.25)",
+  },
+  dateText: {
+    color: "#C9D4FF",
+  },
   actions: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -517,6 +590,47 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     padding: 16,
     width: "90%",
+  },
+  pickerHeader: {
+    gap: 4,
+    marginBottom: 12,
+  },
+  pickerTitle: {
+    fontSize: 18,
+  },
+  pickerChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginBottom: 12,
+  },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  chipText: {
+    color: "#D7DCE5",
+    fontSize: 13,
+  },
+  webDateInputWrap: {
+    borderRadius: 14,
+    padding: 10,
+    backgroundColor: "#13161B",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  webDateInput: {
+    width: "100%",
+    backgroundColor: "transparent",
+    color: "white",
+    border: "none",
+    outline: "none",
+    fontSize: 16,
+    padding: 6,
   },
   pickerActions: {
     marginTop: 12,

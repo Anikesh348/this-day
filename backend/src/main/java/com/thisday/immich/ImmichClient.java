@@ -129,6 +129,8 @@ public class ImmichClient {
             copyHeader(immichResp, response, "Content-Type");
             copyHeader(immichResp, response, "Content-Length");
             copyHeader(immichResp, response, "Content-Range");
+            copyHeader(immichResp, response, "ETag");
+            copyHeader(immichResp, response, "Last-Modified");
 
             String acceptRanges = immichResp.getHeader("Accept-Ranges");
             if (acceptRanges != null) {

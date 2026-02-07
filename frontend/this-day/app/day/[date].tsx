@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -42,6 +42,8 @@ export default function DayViewScreen() {
   const [loading, setLoading] = useState(true);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const prefetchedIds = useRef(new Set<string>());
+  const [videoIds, setVideoIds] = useState<Record<string, true>>({});
 
   const loadData = async () => {
     if (!date) return;
@@ -62,6 +64,51 @@ export default function DayViewScreen() {
       loadData();
     }, [date]),
   );
+
+  useEffect(() => {
+    if (entries.length === 0) return;
+
+    const ids = entries
+      .flatMap((entry) => entry.immichAssetIds ?? [])
+      .filter(Boolean) as string[];
+
+    if (ids.length === 0) return;
+
+    const uniqueIds = ids.filter((id) => !prefetchedIds.current.has(id));
+    if (uniqueIds.length === 0) return;
+
+    const CONCURRENCY = 3;
+    let index = 0;
+
+    const prefetchOne = async (assetId: string) => {
+      prefetchedIds.current.add(assetId);
+      const mediaUrl = apiUrl(`/api/media/immich/${assetId}?type=full`);
+
+      try {
+        const res = await fetch(mediaUrl, { method: "HEAD" });
+        const type = res.headers.get("content-type") ?? "";
+        if (type.startsWith("video/")) {
+          setVideoIds((prev) =>
+            prev[assetId] ? prev : { ...prev, [assetId]: true }
+          );
+        } else if (type.startsWith("image/")) {
+          await Image.prefetch(mediaUrl);
+        }
+      } catch {
+        // Best-effort only; ignore failures to keep UI responsive.
+      }
+    };
+
+    const workers = new Array(CONCURRENCY).fill(0).map(async () => {
+      while (index < uniqueIds.length) {
+        const id = uniqueIds[index];
+        index += 1;
+        await prefetchOne(id);
+      }
+    });
+
+    Promise.all(workers).catch(() => {});
+  }, [entries]);
 
   const handleBack = () => {
     router.replace(from === "calendar" ? "/calendar" : "/today");
@@ -167,14 +214,25 @@ export default function DayViewScreen() {
                           })
                         }
                       >
-                        <Image
-                          source={{
-                          uri: apiUrl(
-                            `/api/media/immich/${assetId}?type=thumbnail`
-                          ),
-                          }}
-                          style={styles.thumbnail}
-                        />
+                        <View style={styles.thumbWrap}>
+                          <Image
+                            source={{
+                              uri: apiUrl(
+                                `/api/media/immich/${assetId}?type=thumbnail`
+                              ),
+                            }}
+                            style={styles.thumbnail}
+                          />
+                          {videoIds[assetId as string] && (
+                            <View style={styles.videoBadge}>
+                              <Ionicons
+                                name="play"
+                                size={14}
+                                color="white"
+                              />
+                            </View>
+                          )}
+                        </View>
                       </Pressable>
                     ))}
                   </View>
@@ -322,6 +380,28 @@ const styles = StyleSheet.create({
     height: GRID_ITEM_SIZE,
     borderRadius: 14,
     backgroundColor: "#111",
+  },
+
+  thumbWrap: {
+    width: GRID_ITEM_SIZE,
+    height: GRID_ITEM_SIZE,
+    borderRadius: 14,
+    overflow: "hidden",
+    position: "relative",
+  },
+
+  videoBadge: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   modalOverlay: {
