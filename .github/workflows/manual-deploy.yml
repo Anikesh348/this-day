@@ -1,11 +1,19 @@
-name: Deploy ThisDay (Docker Build + Up)
+name: Manual Deploy ThisDay (Docker Build + Up)
 
 on:
-  push:
-    branches:
-      - "**"
-    paths-ignore:
-      - ".github/**"
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Git branch to deploy"
+        required: true
+        default: "feat/thisDay"
+      environment:
+        description: "Environment to deploy"
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
 
 jobs:
   deploy:
@@ -38,14 +46,13 @@ jobs:
           script: |
             set -euxo pipefail
 
+            DEPLOY_BRANCH="${{ github.event.inputs.branch }}"
+            APP_ENV="${{ github.event.inputs.environment }}"
+
             echo "====================================="
             echo "📍 Connected to Raspberry Pi"
-            echo "Hostname:"
-            hostname
-            echo "User:"
-            whoami
-            echo "Uptime:"
-            uptime
+            echo "Branch      : ${DEPLOY_BRANCH}"
+            echo "Environment : ${APP_ENV}"
             echo "====================================="
 
             echo "📂 Switching to project directory"
@@ -57,9 +64,6 @@ jobs:
 
             echo "⬇️ Fetching latest changes"
             git fetch origin
-
-            DEPLOY_BRANCH="${{ github.ref_name }}"
-            APP_ENV="${{ github.ref_name == 'feat/thisDay' && 'prod' || 'dev' }}"
 
             echo "📌 Checking out ${DEPLOY_BRANCH}"
             git checkout "${DEPLOY_BRANCH}"
