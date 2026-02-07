@@ -1,6 +1,6 @@
 /* eslint-disable no-undef */
 const CACHE_PREFIX = "thisday-";
-const CACHE_VERSION = "full-media-v1";
+const CACHE_VERSION = "full-media-v2";
 const FULL_MEDIA_CACHE = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const MAX_ENTRIES = 60;
 
@@ -50,7 +50,7 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     (async () => {
       const cache = await caches.open(FULL_MEDIA_CACHE);
-      const cached = await cache.match(request);
+      const cached = await cache.match(request, { ignoreVary: true });
       if (cached) {
         self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
           clients.forEach((client) =>

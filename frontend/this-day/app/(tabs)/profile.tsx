@@ -7,6 +7,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Image, Pressable, StyleSheet, View, Platform } from "react-native";
 import { useState } from "react";
+import { CACHE_PREFIX } from "@/services/mediaCache";
 
 export default function ProfileScreen() {
   const { user } = useUser();
@@ -14,7 +15,6 @@ export default function ProfileScreen() {
   const router = useRouter();
   const [cacheClearing, setCacheClearing] = useState(false);
   const [cacheMessage, setCacheMessage] = useState<string | null>(null);
-  const CACHE_PREFIX = "thisday-";
 
   const logout = async () => {
     await signOut();

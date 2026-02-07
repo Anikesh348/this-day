@@ -21,6 +21,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { getDayEntries } from "@/services/entries";
 import { Colors } from "@/theme/colors";
 import { apiUrl } from "@/services/apiBase";
+import { fetchAndCacheBlobUrl, getCachedBlobUrl } from "@/services/mediaCache";
 
 /* =========================================================
  * Writable directory helper (Expo Go safe)
@@ -358,6 +359,7 @@ function MediaSlide({
   const [isPlaying, setIsPlaying] = useState(false);
   const [webAutoplayBlocked, setWebAutoplayBlocked] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
+  const [webImageUrl, setWebImageUrl] = useState<string | null>(null);
 
   /* =========================================================
    * Detect media type
@@ -367,6 +369,7 @@ function MediaSlide({
     setLoading(true);
     setError(false);
     setLocalVideoUri(null);
+    setWebImageUrl(null);
     imageOpacity.setValue(0);
 
     (async () => {
@@ -387,6 +390,47 @@ function MediaSlide({
       cancelled = true;
     };
   }, [item.id, retryToken]);
+
+  /* =========================================================
+   * Web cache-aware image load
+   * ======================================================= */
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    if (mediaType !== "image") return;
+
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    (async () => {
+      try {
+        objectUrl = await getCachedBlobUrl(mediaUrl);
+        if (!cancelled && objectUrl) {
+          setWebImageUrl(objectUrl);
+          setLoading(false);
+          onImageLoad();
+          return;
+        }
+
+        if (!cancelled) {
+          objectUrl = await fetchAndCacheBlobUrl(mediaUrl);
+          if (objectUrl && !cancelled) {
+            setWebImageUrl(objectUrl);
+            setLoading(false);
+            onImageLoad();
+          }
+        }
+      } catch {
+        // Best-effort only
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [mediaType, mediaUrl]);
 
   /* =========================================================
    * Optional video preload (only when active)
@@ -543,7 +587,7 @@ function MediaSlide({
       {mediaType === "image" && (
         <Pressable style={styles.pressableFill} onPress={onToggleControls}>
           <Animated.Image
-            source={{ uri: mediaUrl }}
+            source={{ uri: webImageUrl ?? mediaUrl }}
             style={[styles.media, { opacity: imageOpacity }]}
             resizeMode="contain"
             onLoadEnd={() => {
