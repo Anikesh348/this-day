@@ -52,6 +52,21 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    if (!("serviceWorker" in navigator)) return;
+
+    const register = async () => {
+      try {
+        await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+      } catch {
+        // Best-effort only
+      }
+    };
+
+    register();
+  }, []);
+
   return (
     <ClerkProvider
       publishableKey={CLERK_PUBLISHABLE_KEY}

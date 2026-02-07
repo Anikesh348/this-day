@@ -5,17 +5,41 @@ import { Colors } from "@/theme/colors";
 import { useAuth, useUser } from "@clerk/clerk-expo";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { Image, Pressable, StyleSheet, View } from "react-native";
+import { Image, Pressable, StyleSheet, View, Platform } from "react-native";
+import { useState } from "react";
 
 export default function ProfileScreen() {
   const { user } = useUser();
   const { signOut } = useAuth();
   const router = useRouter();
+  const [cacheClearing, setCacheClearing] = useState(false);
+  const [cacheMessage, setCacheMessage] = useState<string | null>(null);
 
   const logout = async () => {
     await signOut();
     await clearToken();
     router.replace("/login");
+  };
+
+  const clearWebCache = async () => {
+    if (Platform.OS !== "web") return;
+    if (!("caches" in window)) {
+      setCacheMessage("Cache API not supported in this browser.");
+      return;
+    }
+
+    setCacheClearing(true);
+    setCacheMessage(null);
+    try {
+      const names = await window.caches.keys();
+      const targets = names.filter((name) => name.startsWith("thisday-"));
+      await Promise.all(targets.map((name) => window.caches.delete(name)));
+      setCacheMessage("Media cache cleared.");
+    } catch {
+      setCacheMessage("Failed to clear cache. Try again.");
+    } finally {
+      setCacheClearing(false);
+    }
   };
 
   return (
@@ -50,6 +74,27 @@ export default function ProfileScreen() {
 
         {/* Actions */}
         <View style={styles.actions}>
+          {Platform.OS === "web" && (
+            <View style={styles.cacheBlock}>
+              <Pressable
+                style={[
+                  styles.cacheBtn,
+                  cacheClearing && { opacity: 0.6 },
+                ]}
+                onPress={clearWebCache}
+                disabled={cacheClearing}
+              >
+                <Ionicons name="trash-outline" size={18} color="#FFD166" />
+                <Body style={styles.cacheText}>
+                  {cacheClearing ? "Clearing…" : "Clear Media Cache"}
+                </Body>
+              </Pressable>
+              {!!cacheMessage && (
+                <Muted style={styles.cacheMessage}>{cacheMessage}</Muted>
+              )}
+            </View>
+          )}
+
           <Pressable style={styles.logoutBtn} onPress={logout}>
             <Ionicons name="log-out-outline" size={18} color="#FF6B6B" />
             <Body style={styles.logoutText}>Sign Out</Body>
@@ -122,6 +167,32 @@ const styles = StyleSheet.create({
 
   actions: {
     marginTop: 40,
+    gap: 14,
+  },
+
+  cacheBlock: {
+    gap: 8,
+  },
+
+  cacheBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,209,102,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,209,102,0.3)",
+  },
+
+  cacheText: {
+    color: "#FFD166",
+  },
+
+  cacheMessage: {
+    textAlign: "center",
+    opacity: 0.75,
   },
 
   logoutBtn: {
