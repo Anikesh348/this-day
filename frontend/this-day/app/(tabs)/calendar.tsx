@@ -94,7 +94,7 @@ export default function CalendarScreen() {
           clearTimeout(monthLoadTimeout.current);
         }
       };
-    }, [todayString, loadMonth])
+    }, [todayString, loadMonth]),
   );
 
   const refreshCalendar = useCallback(() => {
@@ -129,6 +129,7 @@ export default function CalendarScreen() {
               pathname: "/today",
               params: {
                 date: date.dateString,
+                from: "calendar",
               },
             });
           }}
@@ -150,7 +151,9 @@ export default function CalendarScreen() {
               source={
                 hasEntry
                   ? {
-                      uri: apiUrl(`/api/media/immich/${assetId}?type=thumbnail`),
+                      uri: apiUrl(
+                        `/api/media/immich/${assetId}?type=thumbnail`,
+                      ),
                     }
                   : undefined
               }
@@ -186,7 +189,7 @@ export default function CalendarScreen() {
         </Pressable>
       );
     },
-    [entries, todayString, router]
+    [entries, todayString, router],
   );
 
   return (

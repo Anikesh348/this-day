@@ -22,7 +22,12 @@ interface Entry {
 
 export default function TodayScreen() {
   const router = useRouter();
-  const { date } = useLocalSearchParams<{ date?: string }>();
+
+  // 🆕 read `from`
+  const { date, from } = useLocalSearchParams<{
+    date?: string;
+    from?: "calendar";
+  }>();
 
   const [today, setToday] = useState<Entry | null>(null);
   const [previous, setPrevious] = useState<Entry | null>(null);
@@ -89,31 +94,26 @@ export default function TodayScreen() {
       try {
         const res = await fetch(
           apiUrl(`/api/media/immich/${assetId}?type=full`),
-          { method: "HEAD" }
+          { method: "HEAD" },
         );
         const type = res.headers.get("content-type") ?? "";
         if (type.startsWith("video/")) {
           setVideoIds((prev) =>
-            prev[assetId] ? prev : { ...prev, [assetId]: true }
+            prev[assetId] ? prev : { ...prev, [assetId]: true },
           );
         }
-      } catch {
-        // Best-effort only
-      }
+      } catch {}
     };
 
-    pending.forEach((id) => {
-      void fetchType(id);
-    });
+    pending.forEach((id) => void fetchType(id));
   }, [today, previous]);
 
   const openDay = (entryDate: string) => {
-    const fromSource = date ? "calendar" : "today";
     router.push({
       pathname: "day/[date]",
       params: {
         date: entryDate,
-        from: fromSource,
+        from: "today",
       },
     });
   };
@@ -125,6 +125,11 @@ export default function TodayScreen() {
       month: "short",
       year: "numeric",
     });
+  };
+
+  // 🆕 back handler
+  const handleBack = () => {
+    router.replace("/calendar");
   };
 
   const renderCard = (entry: Entry, label: string, showDateHint = false) => {
@@ -177,21 +182,56 @@ export default function TodayScreen() {
     </View>
   );
 
+  function getHeaderDateLabel(date?: string) {
+    // Use provided YYYY-MM-DD as IST date if valid
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      const [y, m, d] = date.split("-").map(Number);
+
+      // Create date explicitly in IST (no UTC parsing)
+      const istDate = new Date(
+        Date.UTC(y, m - 1, d, 0, 0, 0) + 5.5 * 60 * 60 * 1000,
+      );
+
+      return istDate.toLocaleDateString("en-IN", {
+        weekday: "long",
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        timeZone: "Asia/Kolkata",
+      });
+    }
+
+    // Fallback → real "today" in IST
+    return new Date().toLocaleDateString("en-IN", {
+      weekday: "long",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: "Asia/Kolkata",
+    });
+  }
+
   return (
     <Screen>
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
+        {/* HEADER */}
         <View style={styles.headerRow}>
-          <View style={styles.headerText}>
-            <Title>This Day</Title>
-            {date ? (
-              <Muted style={styles.subtitle}>{formatDate(date)}</Muted>
-            ) : (
-              <Muted style={styles.subtitle}>Private. Calm. Timeless.</Muted>
-            )}
+          {from === "calendar" ? (
+            <Pressable onPress={handleBack} style={styles.backBtn}>
+              <Ionicons name="chevron-back" size={26} color="white" />
+            </Pressable>
+          ) : (
+            <View style={styles.backBtn} />
+          )}
+
+          <View style={styles.headerCenter}>
+            <Muted style={styles.subtitle}>{getHeaderDateLabel(date)}</Muted>
+            <Muted style={[styles.subtitle, styles.tagline]}>
+              Private. Calm. Timeless.
+            </Muted>
           </View>
 
           <Pressable
@@ -253,6 +293,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 28,
+  },
+
+  // 🆕
+  backBtn: {
+    width: 34,
+    padding: 6,
+    alignItems: "flex-start",
   },
 
   headerText: {
@@ -334,6 +381,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  headerCenter: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
   captionPreview: {
     fontSize: 15,
@@ -368,5 +420,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 12,
     elevation: 10,
+  },
+  tagline: {
+    opacity: 0.7,
+    marginTop: 2,
   },
 });

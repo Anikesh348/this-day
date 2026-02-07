@@ -91,7 +91,7 @@ export default function DayViewScreen() {
         const type = res.headers.get("content-type") ?? "";
         if (type.startsWith("video/")) {
           setVideoIds((prev) =>
-            prev[assetId] ? prev : { ...prev, [assetId]: true }
+            prev[assetId] ? prev : { ...prev, [assetId]: true },
           );
         } else if (type.startsWith("image/")) {
           if (Platform.OS === "web") {
@@ -117,7 +117,10 @@ export default function DayViewScreen() {
   }, [entries]);
 
   const handleBack = () => {
-    router.replace(from === "calendar" ? "/calendar" : "/today");
+    router.replace({
+      pathname: "/today",
+      params: { date },
+    });
   };
 
   return (
@@ -224,18 +227,14 @@ export default function DayViewScreen() {
                           <Image
                             source={{
                               uri: apiUrl(
-                                `/api/media/immich/${assetId}?type=thumbnail`
+                                `/api/media/immich/${assetId}?type=thumbnail`,
                               ),
                             }}
                             style={styles.thumbnail}
                           />
                           {videoIds[assetId as string] && (
                             <View style={styles.videoBadge}>
-                              <Ionicons
-                                name="play"
-                                size={14}
-                                color="white"
-                              />
+                              <Ionicons name="play" size={14} color="white" />
                             </View>
                           )}
                         </View>

@@ -2,6 +2,7 @@ import { Colors } from "@/theme/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { Platform, StyleSheet, View } from "react-native";
+import { useRouter } from "expo-router";
 import Animated, {
   useAnimatedStyle,
   withSpring,
@@ -39,6 +40,7 @@ function AnimatedTabIcon({
 }
 
 export default function TabsLayout() {
+  const router = useRouter();
   return (
     <Tabs
       screenOptions={{
@@ -83,6 +85,21 @@ export default function TabsLayout() {
             <AnimatedTabIcon focused={focused} name="home-outline" />
           ),
         }}
+        listeners={() => ({
+          tabPress: () => {
+            const now = new Date();
+            const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+            const todayIST = ist.toISOString().slice(0, 10);
+
+            // ✅ HARD reset of route + params
+            router.replace({
+              pathname: "/today",
+              params: {
+                date: todayIST,
+              },
+            });
+          },
+        })}
       />
 
       <Tabs.Screen
