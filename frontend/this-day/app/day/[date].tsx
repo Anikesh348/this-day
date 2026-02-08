@@ -119,7 +119,7 @@ export default function DayViewScreen() {
   const handleBack = () => {
     router.replace({
       pathname: "/today",
-      params: { date },
+      params: { date, from: "day" },
     });
   };
 

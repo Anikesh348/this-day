@@ -219,7 +219,7 @@ export default function TodayScreen() {
       >
         {/* HEADER */}
         <View style={styles.headerRow}>
-          {from === "calendar" ? (
+          {["calendar", "day"].includes(from) ? (
             <Pressable onPress={handleBack} style={styles.backBtn}>
               <Ionicons name="chevron-back" size={26} color="white" />
             </Pressable>
