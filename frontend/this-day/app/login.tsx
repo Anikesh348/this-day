@@ -5,23 +5,52 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 
 import { Screen } from "@/components/Screen";
 import { Body, Muted, Title } from "@/components/Text";
-import { getToken as getStoredToken, saveToken } from "@/services/auth";
+import { clearToken, saveToken } from "@/services/auth";
 import { loginBackend } from "@/services/authApi";
 import { Colors } from "@/theme/colors";
 
 export default function LoginScreen() {
-  const { isLoaded, getToken } = useAuth();
+  const { isLoaded, isSignedIn, getToken } = useAuth();
   const { startOAuthFlow } = useOAuth({ strategy: "oauth_google" });
   const router = useRouter();
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
     if (!isLoaded) return;
-    getStoredToken().then((t) => {
-      if (t) router.replace("/today");
-      else setChecking(false);
-    });
-  }, [isLoaded]);
+
+    let active = true;
+
+    const syncAuthState = async () => {
+      if (isSignedIn) {
+        try {
+          const token = await getToken({ template: "ThisDay" });
+          if (token) {
+            await saveToken(token);
+          }
+        } catch {
+          // Best-effort only
+        }
+        if (active) {
+          router.replace("/today");
+        }
+        return;
+      }
+
+      try {
+        await clearToken();
+      } finally {
+        if (active) {
+          setChecking(false);
+        }
+      }
+    };
+
+    void syncAuthState();
+
+    return () => {
+      active = false;
+    };
+  }, [isLoaded, isSignedIn, getToken, router]);
 
   const signIn = async () => {
     const { createdSessionId, setActive } = await startOAuthFlow();
