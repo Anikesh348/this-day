@@ -107,7 +107,7 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.versionBlock}>
-          <Muted style={styles.versionText}>App Version 3.0.3</Muted>
+          <Muted style={styles.versionText}>App Version 3.1.0</Muted>
         </View>
       </View>
     </Screen>

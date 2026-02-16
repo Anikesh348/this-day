@@ -28,7 +28,7 @@ const GRID_ITEM_SIZE =
 
 interface Entry {
   _id: string;
-  caption: string;
+  caption?: string | null;
   immichAssetIds: (string | null)[];
   createdAt: string;
 }
@@ -189,18 +189,46 @@ export default function DayViewScreen() {
                     })}
                   </Muted>
 
-                  <Pressable
-                    onPress={() => {
-                      setDeleteTargetId(entry._id);
-                      setDeleteModalVisible(true);
-                    }}
-                  >
-                    <Ionicons
-                      name="trash-outline"
-                      size={18}
-                      color={Colors.dark.textPrimary}
-                    />
-                  </Pressable>
+                  <View style={styles.cardActions}>
+                    <Pressable
+                      style={styles.editBtn}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/add",
+                          params: {
+                            mode: "edit",
+                            from: "day",
+                            date,
+                            entryId: entry._id,
+                            entryCaption: entry.caption ?? "",
+                            existingAssetIds: JSON.stringify(
+                              entry.immichAssetIds.filter(Boolean),
+                            ),
+                          },
+                        })
+                      }
+                    >
+                      <Ionicons
+                        name="create-outline"
+                        size={14}
+                        color={Colors.dark.textPrimary}
+                      />
+                      <Muted style={styles.editBtnText}>Edit</Muted>
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => {
+                        setDeleteTargetId(entry._id);
+                        setDeleteModalVisible(true);
+                      }}
+                    >
+                      <Ionicons
+                        name="trash-outline"
+                        size={18}
+                        color={Colors.dark.textPrimary}
+                      />
+                    </Pressable>
+                  </View>
                 </View>
 
                 {entry.caption && (
@@ -360,7 +388,29 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 10,
+  },
+
+  cardActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+
+  editBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+
+  editBtnText: {
+    fontSize: 12,
+    color: Colors.dark.textPrimary,
   },
 
   time: {

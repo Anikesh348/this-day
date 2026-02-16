@@ -1,14 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { ResizeMode, Video } from "expo-av";
+import { Audio, ResizeMode, Video } from "expo-av";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
   Keyboard,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -20,22 +19,173 @@ import {
 
 import { Screen } from "@/components/Screen";
 import { Body, Muted, Title } from "@/components/Text";
-import { createBackfilledEntry, createEntry } from "@/services/entries";
+import { createBackfilledEntry, createEntry, updateEntry } from "@/services/entries";
+import { apiUrl } from "@/services/apiBase";
 
 type MediaItem = ImagePicker.ImagePickerAsset & {
   loading?: boolean;
+  previewUri?: string | null;
 };
+
+const MAX_MEDIA_ITEMS = 5;
+const MAX_VIDEO_DURATION_MS = 10 * 1000;
+
+function normalizeDurationMs(duration?: number | null) {
+  if (typeof duration !== "number" || !Number.isFinite(duration) || duration <= 0) {
+    return null;
+  }
+
+  // Some providers return seconds, others milliseconds.
+  return duration > 1000 ? duration : duration * 1000;
+}
+
+async function probeVideoDurationMs(uri: string) {
+  const sound = new Audio.Sound();
+
+  try {
+    await sound.loadAsync({ uri }, { shouldPlay: false }, false);
+    const status = await sound.getStatusAsync();
+    if (!status.isLoaded) return null;
+
+    return typeof status.durationMillis === "number" ? status.durationMillis : null;
+  } catch {
+    return null;
+  } finally {
+    try {
+      await sound.unloadAsync();
+    } catch {
+      // no-op
+    }
+  }
+}
+
+async function generateWebVideoThumbnail(uri: string): Promise<string | null> {
+  if (Platform.OS !== "web") return null;
+
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+    let settled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const finish = (result: string | null) => {
+      if (settled) return;
+      settled = true;
+
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      resolve(result);
+    };
+
+    const captureFrame = () => {
+      try {
+        const width = video.videoWidth || 96;
+        const height = video.videoHeight || 96;
+
+        if (!width || !height) {
+          finish(null);
+          return;
+        }
+
+        const maxSide = 420;
+        const scale = Math.min(1, maxSide / Math.max(width, height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(width * scale));
+        canvas.height = Math.max(1, Math.round(height * scale));
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          finish(null);
+          return;
+        }
+
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        finish(canvas.toDataURL("image/jpeg", 0.72));
+      } catch {
+        finish(null);
+      }
+    };
+
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+    video.src = uri;
+
+    video.onloadedmetadata = () => {
+      const targetTime = Number.isFinite(video.duration)
+        ? Math.min(0.12, Math.max(0, video.duration - 0.01))
+        : 0;
+
+      if (targetTime <= 0) {
+        captureFrame();
+        return;
+      }
+
+      try {
+        video.currentTime = targetTime;
+      } catch {
+        captureFrame();
+      }
+    };
+
+    video.onseeked = captureFrame;
+    video.onloadeddata = () => {
+      if (video.currentTime === 0) {
+        captureFrame();
+      }
+    };
+    video.onerror = () => finish(null);
+
+    timeoutId = setTimeout(() => finish(null), 4500);
+  });
+}
+
+function firstParam(value?: string | string[]) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function parseAssetIdsParam(raw?: string) {
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter((id): id is string => typeof id === "string" && !!id);
+  } catch {
+    return [];
+  }
+}
 
 export default function AddEntryScreen() {
   const router = useRouter();
   const inputRef = useRef<TextInput>(null);
 
-  const { mode, date, from } = useLocalSearchParams<{
-    mode?: "backfill";
+  const params = useLocalSearchParams<{
+    mode?: "backfill" | "edit";
     date?: string;
     from?: "today" | "day";
+    entryId?: string;
+    entryCaption?: string;
+    existingAssetIds?: string;
   }>();
 
+  const mode = firstParam(params.mode);
+  const date = firstParam(params.date);
+  const from = firstParam(params.from);
+  const entryId = firstParam(params.entryId);
+  const entryCaption = firstParam(params.entryCaption) ?? "";
+  const existingAssetIdsParam = firstParam(params.existingAssetIds);
+  const parsedExistingAssetIds = useMemo(
+    () => parseAssetIdsParam(existingAssetIdsParam),
+    [existingAssetIdsParam],
+  );
+
+  const isEditMode = mode === "edit" && !!entryId;
   const forcedBackfill = mode === "backfill" && !!date;
 
   const [entryMode, setEntryMode] = useState<"today" | "past">("today");
@@ -51,13 +201,23 @@ export default function AddEntryScreen() {
   const EDITOR_HEIGHT = 180;
 
   const [media, setMedia] = useState<MediaItem[]>([]);
+  const [existingAssetIds, setExistingAssetIds] = useState<string[]>([]);
+  const [removedAssetIds, setRemovedAssetIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [validationMessage, setValidationMessage] = useState<string | null>(null);
 
   const [showSuccess, setShowSuccess] = useState(false);
   const [countdown, setCountdown] = useState(3);
 
   const isBackfill = forcedBackfill || entryMode === "past";
-  const displayDate = forcedBackfill ? date! : pastDateString;
+  const displayDate = isEditMode
+    ? (date ?? toISTDateString(new Date()))
+    : forcedBackfill
+      ? date!
+      : pastDateString;
+  const visibleExistingAssetIds = existingAssetIds.filter(
+    (id) => !removedAssetIds.includes(id),
+  );
 
   const getMimeType = (m: ImagePicker.ImagePickerAsset) => {
     if (m.mimeType) return m.mimeType;
@@ -81,8 +241,10 @@ export default function AddEntryScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      setCaption("");
+      setCaption(isEditMode ? entryCaption : "");
       setMedia([]);
+      setExistingAssetIds(isEditMode ? parsedExistingAssetIds : []);
+      setRemovedAssetIds([]);
       setSubmitting(false);
       setEntryMode("today");
       setPastDateString(date ?? toISTDateString(new Date()));
@@ -96,21 +258,32 @@ export default function AddEntryScreen() {
         inputRef.current?.blur();
         Keyboard.dismiss();
       };
-    }, [date]),
+    }, [date, entryCaption, isEditMode, parsedExistingAssetIds]),
   );
+
+  useEffect(() => {
+    if (!validationMessage) return;
+
+    const t = setTimeout(() => setValidationMessage(null), 3200);
+    return () => clearTimeout(t);
+  }, [validationMessage]);
 
   useEffect(() => {
     if (!showSuccess) return;
 
     if (countdown === 0) {
       setShowSuccess(false);
-      router.replace("/today");
+      if (isEditMode && from === "day" && date) {
+        router.replace({ pathname: "day/[date]", params: { date } });
+      } else {
+        router.replace("/today");
+      }
       return;
     }
 
     const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
     return () => clearTimeout(t);
-  }, [showSuccess, countdown]);
+  }, [showSuccess, countdown, isEditMode, from, date, router]);
 
 
   const handleBack = () => {
@@ -129,15 +302,9 @@ export default function AddEntryScreen() {
       quality: 0.9,
     });
 
-    if (!res.canceled) {
-      setMedia((p) => [
-        ...p,
-        ...res.assets.map((a) => ({
-          ...a,
-          loading: !(Platform.OS === "web" && a.type === "video"),
-        })),
-      ]);
-    }
+    if (res.canceled) return;
+
+    await addSelectedMedia(res.assets);
   };
 
   const captureFromCamera = async () => {
@@ -150,14 +317,105 @@ export default function AddEntryScreen() {
       quality: 0.9,
     });
 
-    if (!res.canceled) {
+    if (res.canceled) return;
+
+    await addSelectedMedia(res.assets);
+  };
+
+  const validateVideoAssets = async (assets: ImagePicker.ImagePickerAsset[]) => {
+    const validAssets: ImagePicker.ImagePickerAsset[] = [];
+    let skippedLongVideoCount = 0;
+    let skippedUnknownVideoCount = 0;
+
+    for (const asset of assets) {
+      if (asset.type !== "video") {
+        validAssets.push(asset);
+        continue;
+      }
+
+      const knownDurationMs = normalizeDurationMs(asset.duration);
+      const durationMs =
+        knownDurationMs ?? (await probeVideoDurationMs(asset.uri));
+
+      if (durationMs === null) {
+        skippedUnknownVideoCount += 1;
+        continue;
+      }
+
+      if (durationMs > MAX_VIDEO_DURATION_MS) {
+        skippedLongVideoCount += 1;
+        continue;
+      }
+
+      validAssets.push(asset);
+    }
+
+    return { validAssets, skippedLongVideoCount, skippedUnknownVideoCount };
+  };
+
+  const addSelectedMedia = async (assets: ImagePicker.ImagePickerAsset[]) => {
+    const remainingSlots =
+      MAX_MEDIA_ITEMS - (visibleExistingAssetIds.length + media.length);
+
+    if (remainingSlots <= 0) {
+      setValidationMessage(
+        `You can only attach up to ${MAX_MEDIA_ITEMS} media items.`,
+      );
+      return;
+    }
+
+    const { validAssets, skippedLongVideoCount, skippedUnknownVideoCount } =
+      await validateVideoAssets(assets);
+
+    const limitedAssets = validAssets.slice(0, remainingSlots);
+    const skippedForLimitCount = Math.max(0, validAssets.length - remainingSlots);
+
+    if (limitedAssets.length > 0) {
+      const preparedAssets = await Promise.all(
+        limitedAssets.map(async (asset) => {
+          if (Platform.OS === "web" && asset.type === "video") {
+            const previewUri = await generateWebVideoThumbnail(asset.uri);
+            return {
+              ...asset,
+              previewUri,
+              loading: false,
+            };
+          }
+
+          return {
+            ...asset,
+            loading: !(Platform.OS === "web" && asset.type === "video"),
+          };
+        }),
+      );
+
       setMedia((p) => [
         ...p,
-        ...res.assets.map((a) => ({
-          ...a,
-          loading: !(Platform.OS === "web" && a.type === "video"),
-        })),
+        ...preparedAssets,
       ]);
+    }
+
+    const messages: string[] = [];
+    if (skippedLongVideoCount > 0) {
+      messages.push(
+        `${skippedLongVideoCount} video${skippedLongVideoCount > 1 ? "s were" : " was"} skipped because duration exceeds 10 seconds.`,
+      );
+    }
+
+    if (skippedUnknownVideoCount > 0) {
+      messages.push(
+        `${skippedUnknownVideoCount} video${skippedUnknownVideoCount > 1 ? "s were" : " was"} skipped because duration could not be verified.`,
+      );
+    }
+
+    if (skippedForLimitCount > 0) {
+      messages.push(
+        `${skippedForLimitCount} item${skippedForLimitCount > 1 ? "s were" : " was"} skipped because the max is ${MAX_MEDIA_ITEMS}.`,
+      );
+    }
+
+    if (messages.length > 0) {
+      setValidationMessage(messages.join("\n"));
     }
   };
 
@@ -171,36 +429,73 @@ export default function AddEntryScreen() {
     setMedia((p) => p.filter((m) => m.uri !== uri));
   };
 
+  const removeExistingMedia = (assetId: string) => {
+    setRemovedAssetIds((prev) =>
+      prev.includes(assetId) ? prev : [...prev, assetId],
+    );
+  };
+
   const submit = async () => {
     if (submitting) return;
 
     Keyboard.dismiss();
+    setValidationMessage(null);
     setSubmitting(true);
-    setShowSuccess(true);
-    setCountdown(3);
-
-    const files = media.map((m) => ({
-      uri: m.uri,
-      name: getFileName(m),
-      type: getMimeType(m),
-    }));
 
     try {
-      if (isBackfill) {
-        await createBackfilledEntry(displayDate, caption, files);
-      } else {
-        await createEntry(caption, files);
+      const trimmedCaption = caption.trim();
+      const totalMediaCount = visibleExistingAssetIds.length + media.length;
+
+      if (!trimmedCaption && totalMediaCount === 0) {
+        setValidationMessage("Add a caption or at least one media item.");
+        return;
       }
+
+      const { validAssets, skippedLongVideoCount, skippedUnknownVideoCount } =
+        await validateVideoAssets(media);
+
+      if (
+        skippedLongVideoCount > 0 ||
+        skippedUnknownVideoCount > 0 ||
+        validAssets.length !== media.length
+      ) {
+        const messages: string[] = [];
+        if (skippedLongVideoCount > 0) {
+          messages.push(
+            `${skippedLongVideoCount} selected video${skippedLongVideoCount > 1 ? "s exceed" : " exceeds"} 10 seconds.`,
+          );
+        }
+        if (skippedUnknownVideoCount > 0) {
+          messages.push(
+            `${skippedUnknownVideoCount} selected video${skippedUnknownVideoCount > 1 ? "s have" : " has"} unknown duration.`,
+          );
+        }
+        messages.push("Please remove invalid videos before saving.");
+        setValidationMessage(messages.join("\n"));
+        return;
+      }
+
+      const files = validAssets.map((m) => ({
+        uri: m.uri,
+        name: getFileName(m),
+        type: getMimeType(m),
+      }));
+
+      if (isEditMode && entryId) {
+        await updateEntry(entryId, trimmedCaption, files, removedAssetIds);
+      } else if (isBackfill) {
+        await createBackfilledEntry(displayDate, trimmedCaption, files);
+      } else {
+        await createEntry(trimmedCaption, files);
+      }
+      setShowSuccess(true);
+      setCountdown(3);
+    } catch (error) {
+      console.error("Failed to save entry", error);
     } finally {
       setSubmitting(false);
     }
   };
-
-  const formattedToday = new Date().toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
 
   const setDateFromPreset = (dateToSet: Date) => {
     const istDateString = toISTDateString(dateToSet);
@@ -223,13 +518,13 @@ export default function AddEntryScreen() {
         <Pressable onPress={handleBack}>
           <Ionicons name="chevron-back" size={26} color="white" />
         </Pressable>
-        <Title>New Entry</Title>
+        <Title>{isEditMode ? "Edit Entry" : "New Entry"}</Title>
         <View style={{ width: 26 }} />
       </View>
 
       {/* META */}
       <View style={styles.meta}>
-        {!forcedBackfill && (
+        {!forcedBackfill && !isEditMode && (
           <View style={styles.toggle}>
             {["today", "past"].map((v) => (
               <Pressable
@@ -251,13 +546,13 @@ export default function AddEntryScreen() {
       <View style={styles.dateLabel}>
         <Pressable
           onPress={() => {
-            if (!isBackfill) return;
+            if (!isBackfill || isEditMode) return;
             setTempDate(new Date(`${pastDateString}T00:00:00`));
             setShowDatePicker(true);
           }}
           style={[
             styles.datePill,
-            !isBackfill && { opacity: 0.6 },
+            (!isBackfill || isEditMode) && { opacity: 0.6 },
           ]}
         >
           <Ionicons name="calendar-outline" size={16} color="#8AA4FF" />
@@ -278,7 +573,7 @@ export default function AddEntryScreen() {
             <Ionicons name="camera-outline" size={22} color="#8AA4FF" />
           </Pressable>
 
-          {(forcedBackfill || entryMode === "past") && (
+          {!isEditMode && (forcedBackfill || entryMode === "past") && (
             <Pressable
               style={styles.iconBtn}
               onPress={() => {
@@ -295,21 +590,56 @@ export default function AddEntryScreen() {
           style={[styles.saveBtn, submitting && { opacity: 0.6 }]}
           onPress={submit}
         >
-          <Body style={{ color: "white" }}>Save</Body>
+          <Body style={{ color: "white" }}>{isEditMode ? "Update" : "Save"}</Body>
         </Pressable>
       </View>
 
+      {!!validationMessage && (
+        <View style={styles.validationBanner}>
+          <Body style={styles.validationText}>{validationMessage}</Body>
+        </View>
+      )}
+
       {/* MEDIA */}
-      {media.length > 0 && (
+      {(visibleExistingAssetIds.length > 0 || media.length > 0) && (
         <View style={styles.mediaStripContainer}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.mediaStrip}
           >
+            {visibleExistingAssetIds.map((assetId) => (
+              <View key={`existing-${assetId}`} style={styles.mediaWrapper}>
+                <Image
+                  source={{
+                    uri: apiUrl(`/api/media/immich/${assetId}?type=thumbnail`),
+                  }}
+                  style={styles.media}
+                />
+
+                <View style={styles.existingBadge}>
+                  <Body style={styles.existingBadgeText}>Saved</Body>
+                </View>
+
+                <Pressable
+                  style={styles.removeBtn}
+                  onPress={() => removeExistingMedia(assetId)}
+                >
+                  <Ionicons name="close" size={16} color="white" />
+                </Pressable>
+              </View>
+            ))}
+
             {media.map((m) => (
               <View key={m.uri} style={styles.mediaWrapper}>
-                {m.type === "video" ? (
+                {m.type === "video" && Platform.OS === "web" && m.previewUri ? (
+                  <View style={styles.videoPreviewWrap}>
+                    <Image source={{ uri: m.previewUri }} style={styles.media} />
+                    <View style={styles.videoPreviewBadge}>
+                      <Ionicons name="play" size={14} color="#fff" />
+                    </View>
+                  </View>
+                ) : m.type === "video" ? (
                   <Video
                     source={{ uri: m.uri }}
                     style={styles.media}
@@ -412,7 +742,11 @@ export default function AddEntryScreen() {
                     setPastDateString(e.target.value);
                     setTempDate(new Date(`${e.target.value}T00:00:00`));
                   }}
-                  style={styles.webDateInput as any}
+                  style={{
+                    ...(styles.webDateInput as any),
+                    border: "none",
+                    outline: "none",
+                  }}
                 />
               </View>
             ) : (
@@ -451,7 +785,11 @@ export default function AddEntryScreen() {
         <View style={styles.successOverlay}>
           <View style={styles.successCard}>
             <Ionicons name="checkmark-circle" size={64} color="#6C8CFF" />
-            <Title>Your entry will be securely synced to the cloud.</Title>
+            <Title>
+              {isEditMode
+                ? "Your changes will be securely synced to the cloud."
+                : "Your entry will be securely synced to the cloud."}
+            </Title>
             <Muted>Redirecting in {countdown}s…</Muted>
           </View>
         </View>
@@ -521,6 +859,21 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: "#6C8CFF",
   },
+  validationBanner: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: "rgba(228,88,88,0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(228,88,88,0.45)",
+  },
+  validationText: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: "#FFD5D5",
+  },
   mediaStripContainer: {
     height: 120, // ✅ fixed height
     marginVertical: 0,
@@ -543,6 +896,38 @@ const styles = StyleSheet.create({
   media: {
     width: "100%",
     height: "100%",
+  },
+  videoPreviewWrap: {
+    width: "100%",
+    height: "100%",
+  },
+  videoPreviewBadge: {
+    position: "absolute",
+    right: 6,
+    bottom: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.35)",
+  },
+
+  existingBadge: {
+    position: "absolute",
+    left: 6,
+    bottom: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: "rgba(0,0,0,0.6)",
+  },
+
+  existingBadgeText: {
+    fontSize: 10,
+    color: "#fff",
   },
 
   editorWeb: {
@@ -627,8 +1012,6 @@ const styles = StyleSheet.create({
     width: "100%",
     backgroundColor: "transparent",
     color: "white",
-    border: "none",
-    outline: "none",
     fontSize: 16,
     padding: 6,
   },
