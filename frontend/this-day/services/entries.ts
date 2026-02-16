@@ -92,6 +92,23 @@ export async function createBackfilledEntry(
   return api.post("/api/entries/backfill", form);
 }
 
+export async function updateEntry(
+  entryId: string,
+  caption: string,
+  files: { uri: string; name: string; type: string }[],
+  removeAssetIds: string[] = []
+) {
+  const form = new FormData();
+  form.append("caption", caption);
+  form.append("removeAssetIds", JSON.stringify(removeAssetIds));
+
+  for (const file of files) {
+    await appendFile(form, file);
+  }
+
+  return api.put(`/api/entries/${entryId}`, form);
+}
+
 export function deleteEntry(entryId: string) {
   return api.delete(`/api/entries/${entryId}`);
 }
