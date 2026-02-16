@@ -1,0 +1,24 @@
+# VCS/editor noise
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+
+# Local env + build artifacts
+node_modules
+dist
+web-build
+.expo
+.metro-health-check*
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# Native folders not needed for web export
+android
+ios
+
+# Local Yarn state only
+.yarn/install-state.gz
