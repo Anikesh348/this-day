@@ -1,0 +1,83 @@
+name: Manual Deploy ThisDay (Tag Based)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Git tag to deploy (e.g. v1.0.0)"
+        required: true
+      environment:
+        description: "Environment to deploy"
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🧩 Join Tailscale tailnet
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          hostname: gha-deploy-thisday-manual
+
+      - name: 🔍 Verify Tailscale connectivity
+        run: |
+          tailscale status
+          ping -c 3 ${{ secrets.PI_HOST }}
+
+      - name: 🚀 Deploy Tag on Raspberry Pi
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PI_HOST }}
+          username: ${{ secrets.PI_USER }}
+          key: ${{ secrets.PI_SSH_KEY }}
+          script: |
+            set -euxo pipefail
+
+            DEPLOY_TAG="${{ github.event.inputs.tag }}"
+            APP_ENV="${{ github.event.inputs.environment }}"
+
+            echo "====================================="
+            echo "📍 Connected to Raspberry Pi"
+            echo "Deploying Tag : ${DEPLOY_TAG}"
+            echo "Environment   : ${APP_ENV}"
+            echo "====================================="
+
+            cd /srv/this-day
+
+            echo "⬇️ Fetching tags"
+            git fetch --tags origin
+
+            echo "🧹 Resetting repo to clean state"
+            git reset --hard
+            git clean -fd
+
+            echo "📌 Checking out tag ${DEPLOY_TAG}"
+            git checkout -f "tags/${DEPLOY_TAG}"
+
+            echo "📌 Current commit"
+            git log -1 --oneline
+
+            echo "====================================="
+            echo "🐳 Docker Compose status (before)"
+            docker compose ps
+            echo "====================================="
+
+            echo "🔨 Building Docker images"
+            APP_ENV="${APP_ENV}" docker compose --profile "${APP_ENV}" build
+
+            echo "🚀 Starting containers"
+            APP_ENV="${APP_ENV}" docker compose --profile "${APP_ENV}" up -d
+
+            echo "====================================="
+            echo "🐳 Docker Compose status (after)"
+            docker compose ps
+            echo "====================================="
+
+            echo "📜 Recent container logs"
+            docker compose logs --tail=100
