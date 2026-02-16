@@ -189,12 +189,29 @@ public class EntryReadRepository {
                                         .put("_id", "$date")
                                         .put("allAssets",
                                                 new JsonObject().put("$push", "$immichAssetIds"))
+                                        .put("hasCaptionFlag",
+                                                new JsonObject().put("$max",
+                                                        new JsonObject().put("$cond",
+                                                                new JsonArray()
+                                                                        .add(hasCaptionExpr())
+                                                                        .add(1)
+                                                                        .add(0)
+                                                        )
+                                                )
+                                        )
                         ))
 
                         .add(new JsonObject().put("$project",
                                 new JsonObject()
                                         .put("date", "$_id")
                                         .put("hasEntries", true)
+                                        .put("hasCaption",
+                                                new JsonObject().put("$eq",
+                                                        new JsonArray()
+                                                                .add("$hasCaptionFlag")
+                                                                .add(1)
+                                                )
+                                        )
                                         .put("immichAssetId", firstValidAssetExpr())
                         ));
 

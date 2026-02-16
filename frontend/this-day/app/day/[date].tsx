@@ -2,7 +2,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Image,
   Modal,
   Platform,
@@ -12,6 +11,7 @@ import {
   View,
   Dimensions,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 
 import { Screen } from "@/components/Screen";
 import { Body, Muted, Title } from "@/components/Text";
@@ -35,7 +35,7 @@ interface Entry {
 
 export default function DayViewScreen() {
   const router = useRouter();
-  const { date, from } = useLocalSearchParams<{
+  const { date } = useLocalSearchParams<{
     date: string;
     from?: "calendar" | "today";
   }>();
@@ -131,13 +131,15 @@ export default function DayViewScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Pressable onPress={handleBack} style={styles.backBtn}>
-            <Ionicons
-              name="chevron-back"
-              size={26}
-              color={Colors.dark.textPrimary}
-            />
-          </Pressable>
+          <View style={styles.headerSide}>
+            <Pressable onPress={handleBack} style={styles.iconBtn}>
+              <Ionicons
+                name="chevron-back"
+                size={24}
+                color={Colors.dark.textPrimary}
+              />
+            </Pressable>
+          </View>
 
           <View style={styles.headerText}>
             <Title style={styles.title}>
@@ -153,19 +155,30 @@ export default function DayViewScreen() {
                 year: "numeric",
               })}
             </Muted>
+            <Muted style={styles.dayMeta}>
+              {loading
+                ? "Loading entries..."
+                : `${entries.length} ${entries.length === 1 ? "entry" : "entries"}`}
+            </Muted>
           </View>
 
-          <Pressable
-            onPress={loadData}
-            disabled={loading}
-            style={({ pressed }) => [
-              styles.refreshBtn,
-              pressed && { opacity: 0.6 },
-              loading && { opacity: 0.4 },
-            ]}
-          >
-            <Ionicons name="refresh" size={30} color={Colors.dark.textMuted} />
-          </Pressable>
+          <View style={styles.headerSide}>
+            <Pressable
+              onPress={loadData}
+              disabled={loading}
+              style={({ pressed }) => [
+                styles.iconBtn,
+                pressed && { opacity: 0.6 },
+                loading && { opacity: 0.4 },
+              ]}
+            >
+              <Ionicons
+                name="refresh"
+                size={24}
+                color={Colors.dark.textMuted}
+              />
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.stack}>
@@ -173,16 +186,34 @@ export default function DayViewScreen() {
 
           {!loading && entries.length === 0 && (
             <View style={[styles.card, styles.emptyCard]}>
-              <Muted>No entries for this day</Muted>
+              <View style={styles.emptyIcon}>
+                <Ionicons
+                  name="reader-outline"
+                  size={22}
+                  color={Colors.dark.textMuted}
+                />
+              </View>
+              <Muted style={styles.emptyTitle}>No entries for this day</Muted>
+              <Muted style={styles.emptySubtitle}>
+                Tap the + button to add your first memory.
+              </Muted>
             </View>
           )}
 
           {!loading &&
             entries.map((entry) => (
               <View key={entry._id} style={styles.card}>
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={["rgba(79,139,255,0.16)", "rgba(79,139,255,0.01)"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.cardGradient}
+                />
+
                 {/* Card header */}
                 <View style={styles.cardHeader}>
-                  <Muted style={styles.time}>
+                  <Muted style={styles.timePill}>
                     {new Date(entry.createdAt).toLocaleTimeString([], {
                       hour: "2-digit",
                       minute: "2-digit",
@@ -191,7 +222,10 @@ export default function DayViewScreen() {
 
                   <View style={styles.cardActions}>
                     <Pressable
-                      style={styles.editBtn}
+                      style={({ pressed }) => [
+                        styles.editBtn,
+                        pressed && styles.actionPressed,
+                      ]}
                       onPress={() =>
                         router.push({
                           pathname: "/add",
@@ -217,6 +251,10 @@ export default function DayViewScreen() {
                     </Pressable>
 
                     <Pressable
+                      style={({ pressed }) => [
+                        styles.deleteBtnIcon,
+                        pressed && styles.actionPressed,
+                      ]}
                       onPress={() => {
                         setDeleteTargetId(entry._id);
                         setDeleteModalVisible(true);
@@ -328,7 +366,7 @@ export default function DayViewScreen() {
 
 const styles = StyleSheet.create({
   scroll: {
-    paddingTop: 36,
+    paddingTop: 20,
     paddingBottom: 120,
     paddingHorizontal: 6,
   },
@@ -336,25 +374,32 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 28,
+    width: "100%",
+    maxWidth: 500,
+    alignSelf: "center",
+    marginBottom: 22,
   },
 
   headerText: {
+    flex: 1,
     alignItems: "center",
   },
 
-  backBtn: {
-    position: "absolute",
-    left: 0,
-    top: 2,
+  headerSide: {
+    width: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
-  refreshBtn: {
-    position: "absolute",
-    right: 0,
-    padding: 8,
-    borderRadius: 20,
+  iconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
   },
 
   title: {
@@ -365,24 +410,55 @@ const styles = StyleSheet.create({
     opacity: 0.75,
   },
 
+  dayMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    color: Colors.dark.textMuted,
+  },
+
   stack: {
     width: "100%",
     maxWidth: 500,
     alignSelf: "center",
-    gap: 22,
+    gap: 18,
   },
 
   card: {
-    backgroundColor: "#1C1F24",
+    backgroundColor: "rgba(255,255,255,0.04)",
     borderRadius: 26,
-    padding: 18,
+    padding: 16,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
+    borderColor: "rgba(255,255,255,0.1)",
+    overflow: "hidden",
+  },
+
+  cardGradient: {
+    ...StyleSheet.absoluteFillObject,
   },
 
   emptyCard: {
     alignItems: "center",
-    paddingVertical: 32,
+    paddingVertical: 30,
+  },
+
+  emptyIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    marginBottom: 10,
+  },
+
+  emptyTitle: {
+    color: Colors.dark.textSecondary,
+  },
+
+  emptySubtitle: {
+    marginTop: 4,
+    opacity: 0.74,
+    fontSize: 12,
   },
 
   cardHeader: {
@@ -395,7 +471,7 @@ const styles = StyleSheet.create({
   cardActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 8,
   },
 
   editBtn: {
@@ -408,20 +484,40 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.06)",
   },
 
+  deleteBtnIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,92,92,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,92,92,0.2)",
+  },
+
+  actionPressed: {
+    opacity: 0.72,
+  },
+
   editBtnText: {
     fontSize: 12,
     color: Colors.dark.textPrimary,
   },
 
-  time: {
+  timePill: {
     fontSize: 12,
-    opacity: 0.75,
+    color: Colors.dark.textSecondary,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.08)",
   },
 
   caption: {
-    fontSize: 16,
+    fontSize: 15,
     lineHeight: 23,
     marginBottom: 12,
+    color: Colors.dark.textPrimary,
   },
 
   mediaGrid: {
@@ -433,16 +529,18 @@ const styles = StyleSheet.create({
   thumbnail: {
     width: GRID_ITEM_SIZE,
     height: GRID_ITEM_SIZE,
-    borderRadius: 14,
+    borderRadius: 16,
     backgroundColor: "#111",
   },
 
   thumbWrap: {
     width: GRID_ITEM_SIZE,
     height: GRID_ITEM_SIZE,
-    borderRadius: 14,
+    borderRadius: 16,
     overflow: "hidden",
     position: "relative",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
   },
 
   videoBadge: {
@@ -468,11 +566,11 @@ const styles = StyleSheet.create({
 
   modalCard: {
     width: "86%",
-    backgroundColor: "#1E2126",
+    backgroundColor: "#171B22",
     borderRadius: 22,
     padding: 22,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.12)",
   },
 
   modalTitle: {
@@ -496,6 +594,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 12,
     backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
   },
 
   deleteBtn: {
@@ -512,17 +612,25 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: "rgba(108,140,255,0.18)",
+    backgroundColor: "rgba(79,139,255,0.24)",
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#6C8CFF",
+    shadowOpacity: 0.38,
+    shadowRadius: 26,
+    elevation: 12,
   },
 
   fabInner: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: "#6C8CFF",
+    backgroundColor: Colors.dark.accent,
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    elevation: 7,
   },
 });

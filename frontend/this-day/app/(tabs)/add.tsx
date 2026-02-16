@@ -4,16 +4,20 @@ import { Audio, ResizeMode, Video } from "expo-av";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useIsFocused } from "@react-navigation/native";
 import {
   ActivityIndicator,
   Image,
   Keyboard,
+  KeyboardAvoidingView,
   Modal,
+  NativeSyntheticEvent,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
+  TextInputContentSizeChangeEventData,
   View,
 } from "react-native";
 
@@ -21,6 +25,7 @@ import { Screen } from "@/components/Screen";
 import { Body, Muted, Title } from "@/components/Text";
 import { createBackfilledEntry, createEntry, updateEntry } from "@/services/entries";
 import { apiUrl } from "@/services/apiBase";
+import { Colors } from "@/theme/colors";
 
 type MediaItem = ImagePicker.ImagePickerAsset & {
   loading?: boolean;
@@ -29,6 +34,8 @@ type MediaItem = ImagePicker.ImagePickerAsset & {
 
 const MAX_MEDIA_ITEMS = 5;
 const MAX_VIDEO_DURATION_MS = 10 * 1000;
+const MIN_EDITOR_HEIGHT = 42;
+const MAX_EDITOR_HEIGHT = 220;
 
 function normalizeDurationMs(duration?: number | null) {
   if (typeof duration !== "number" || !Number.isFinite(duration) || duration <= 0) {
@@ -163,6 +170,7 @@ function parseAssetIdsParam(raw?: string) {
 
 export default function AddEntryScreen() {
   const router = useRouter();
+  const isFocused = useIsFocused();
   const inputRef = useRef<TextInput>(null);
 
   const params = useLocalSearchParams<{
@@ -198,7 +206,8 @@ export default function AddEntryScreen() {
   const [isEditorFocused, setIsEditorFocused] = useState(false);
 
   const [caption, setCaption] = useState("");
-  const EDITOR_HEIGHT = 180;
+  const [editorHeight, setEditorHeight] = useState(MIN_EDITOR_HEIGHT);
+  const [editorScrollable, setEditorScrollable] = useState(false);
 
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [existingAssetIds, setExistingAssetIds] = useState<string[]>([]);
@@ -218,6 +227,8 @@ export default function AddEntryScreen() {
   const visibleExistingAssetIds = existingAssetIds.filter(
     (id) => !removedAssetIds.includes(id),
   );
+  const attachedCount = visibleExistingAssetIds.length + media.length;
+  const canSubmit = caption.trim().length > 0 || attachedCount > 0;
 
   const getMimeType = (m: ImagePicker.ImagePickerAsset) => {
     if (m.mimeType) return m.mimeType;
@@ -242,6 +253,8 @@ export default function AddEntryScreen() {
   useFocusEffect(
     useCallback(() => {
       setCaption(isEditMode ? entryCaption : "");
+      setEditorHeight(MIN_EDITOR_HEIGHT);
+      setEditorScrollable(false);
       setMedia([]);
       setExistingAssetIds(isEditMode ? parsedExistingAssetIds : []);
       setRemovedAssetIds([]);
@@ -285,6 +298,70 @@ export default function AddEntryScreen() {
     return () => clearTimeout(t);
   }, [showSuccess, countdown, isEditMode, from, date, router]);
 
+  useEffect(() => {
+    if (Platform.OS === "web" || !isFocused) return;
+
+    const sub = Keyboard.addListener("keyboardDidHide", () => {
+      if (!isFocused || showDatePicker || showSuccess) return;
+      requestAnimationFrame(() => inputRef.current?.focus());
+    });
+
+    return () => sub.remove();
+  }, [isFocused, showDatePicker, showSuccess]);
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || !isFocused || showDatePicker || showSuccess) return;
+
+    let cancelled = false;
+    const timers = [0, 120, 360, 720].map((delayMs) =>
+      setTimeout(() => {
+        if (!cancelled) {
+          inputRef.current?.focus();
+        }
+      }, delayMs),
+    );
+
+    const focusOnTouch = () => {
+      if (cancelled) return;
+      inputRef.current?.focus();
+    };
+
+    window.addEventListener("touchstart", focusOnTouch, true);
+
+    return () => {
+      cancelled = true;
+      timers.forEach((timer) => clearTimeout(timer));
+      window.removeEventListener("touchstart", focusOnTouch, true);
+    };
+  }, [isFocused, showDatePicker, showSuccess]);
+
+  useEffect(() => {
+    if (isFocused) return;
+    inputRef.current?.blur();
+    Keyboard.dismiss();
+  }, [isFocused]);
+
+  const keepKeyboardOpen = useCallback(() => {
+    if (!isFocused || showDatePicker || showSuccess) return;
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [isFocused, showDatePicker, showSuccess]);
+
+  const handleEditorContentSizeChange = useCallback(
+    (event: NativeSyntheticEvent<TextInputContentSizeChangeEventData>) => {
+      const contentHeight = event.nativeEvent.contentSize.height;
+      const boundedHeight = Math.max(
+        MIN_EDITOR_HEIGHT,
+        Math.min(MAX_EDITOR_HEIGHT, contentHeight),
+      );
+
+      setEditorHeight((prev) =>
+        Math.abs(prev - boundedHeight) > 1 ? boundedHeight : prev,
+      );
+      setEditorScrollable(contentHeight > MAX_EDITOR_HEIGHT);
+    },
+    [],
+  );
+
 
   const handleBack = () => {
     if (from === "day" && date) {
@@ -295,31 +372,40 @@ export default function AddEntryScreen() {
   };
 
   const addFromGallery = async () => {
-    Keyboard.dismiss();
     const res = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: true,
       mediaTypes: ImagePicker.MediaTypeOptions.All,
       quality: 0.9,
     });
 
-    if (res.canceled) return;
+    if (res.canceled) {
+      keepKeyboardOpen();
+      return;
+    }
 
     await addSelectedMedia(res.assets);
+    keepKeyboardOpen();
   };
 
   const captureFromCamera = async () => {
-    Keyboard.dismiss();
     const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) return;
+    if (!perm.granted) {
+      keepKeyboardOpen();
+      return;
+    }
 
     const res = await ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.All,
       quality: 0.9,
     });
 
-    if (res.canceled) return;
+    if (res.canceled) {
+      keepKeyboardOpen();
+      return;
+    }
 
     await addSelectedMedia(res.assets);
+    keepKeyboardOpen();
   };
 
   const validateVideoAssets = async (assets: ImagePicker.ImagePickerAsset[]) => {
@@ -437,8 +523,6 @@ export default function AddEntryScreen() {
 
   const submit = async () => {
     if (submitting) return;
-
-    Keyboard.dismiss();
     setValidationMessage(null);
     setSubmitting(true);
 
@@ -512,289 +596,347 @@ export default function AddEntryScreen() {
 
   return (
     <Screen>
-      <View style={styles.root}>
-      {/* HEADER */}
-      <View style={styles.header}>
-        <Pressable onPress={handleBack}>
-          <Ionicons name="chevron-back" size={26} color="white" />
-        </Pressable>
-        <Title>{isEditMode ? "Edit Entry" : "New Entry"}</Title>
-        <View style={{ width: 26 }} />
-      </View>
-
-      {/* META */}
-      <View style={styles.meta}>
-        {!forcedBackfill && !isEditMode && (
-          <View style={styles.toggle}>
-            {["today", "past"].map((v) => (
-              <Pressable
-                key={v}
-                onPress={() => setEntryMode(v as any)}
-                style={[
-                  styles.toggleBtn,
-                  entryMode === v && styles.toggleActive,
-                ]}
-              >
-                <Body>{v === "today" ? "Today" : "Past"}</Body>
-              </Pressable>
-            ))}
-          </View>
-        )}
-      </View>
-
-      {/* DATE LABEL */}
-      <View style={styles.dateLabel}>
-        <Pressable
-          onPress={() => {
-            if (!isBackfill || isEditMode) return;
-            setTempDate(new Date(`${pastDateString}T00:00:00`));
-            setShowDatePicker(true);
-          }}
-          style={[
-            styles.datePill,
-            (!isBackfill || isEditMode) && { opacity: 0.6 },
-          ]}
-        >
-          <Ionicons name="calendar-outline" size={16} color="#8AA4FF" />
-          <Muted style={styles.dateText}>
-            {new Date(`${displayDate}T00:00:00`).toDateString()}
-          </Muted>
-        </Pressable>
-      </View>
-
-      {/* ACTION ROW */}
-      <View style={styles.actions}>
-        <View style={styles.actionLeft}>
-          <Pressable style={styles.iconBtn} onPress={addFromGallery}>
-            <Ionicons name="images-outline" size={22} color="#8AA4FF" />
-          </Pressable>
-
-          <Pressable style={styles.iconBtn} onPress={captureFromCamera}>
-            <Ionicons name="camera-outline" size={22} color="#8AA4FF" />
-          </Pressable>
-
-          {!isEditMode && (forcedBackfill || entryMode === "past") && (
-            <Pressable
-              style={styles.iconBtn}
-              onPress={() => {
-                setTempDate(new Date(`${pastDateString}T00:00:00`));
-                setShowDatePicker(true);
-              }}
-            >
-              <Ionicons name="calendar-outline" size={22} color="#8AA4FF" />
-            </Pressable>
-          )}
-        </View>
-
-        <Pressable
-          style={[styles.saveBtn, submitting && { opacity: 0.6 }]}
-          onPress={submit}
-        >
-          <Body style={{ color: "white" }}>{isEditMode ? "Update" : "Save"}</Body>
-        </Pressable>
-      </View>
-
-      {!!validationMessage && (
-        <View style={styles.validationBanner}>
-          <Body style={styles.validationText}>{validationMessage}</Body>
-        </View>
-      )}
-
-      {/* MEDIA */}
-      {(visibleExistingAssetIds.length > 0 || media.length > 0) && (
-        <View style={styles.mediaStripContainer}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.mediaStrip}
-          >
-            {visibleExistingAssetIds.map((assetId) => (
-              <View key={`existing-${assetId}`} style={styles.mediaWrapper}>
-                <Image
-                  source={{
-                    uri: apiUrl(`/api/media/immich/${assetId}?type=thumbnail`),
-                  }}
-                  style={styles.media}
-                />
-
-                <View style={styles.existingBadge}>
-                  <Body style={styles.existingBadgeText}>Saved</Body>
-                </View>
-
-                <Pressable
-                  style={styles.removeBtn}
-                  onPress={() => removeExistingMedia(assetId)}
-                >
-                  <Ionicons name="close" size={16} color="white" />
-                </Pressable>
-              </View>
-            ))}
-
-            {media.map((m) => (
-              <View key={m.uri} style={styles.mediaWrapper}>
-                {m.type === "video" && Platform.OS === "web" && m.previewUri ? (
-                  <View style={styles.videoPreviewWrap}>
-                    <Image source={{ uri: m.previewUri }} style={styles.media} />
-                    <View style={styles.videoPreviewBadge}>
-                      <Ionicons name="play" size={14} color="#fff" />
-                    </View>
-                  </View>
-                ) : m.type === "video" ? (
-                  <Video
-                    source={{ uri: m.uri }}
-                    style={styles.media}
-                    resizeMode={ResizeMode.COVER}
-                    useNativeControls
-                    onLoad={() => markLoaded(m.uri)}
-                    onReadyForDisplay={() => markLoaded(m.uri)}
-                  />
-                ) : (
-                  <Image
-                    source={{ uri: m.uri }}
-                    style={styles.media}
-                    onLoadEnd={() => markLoaded(m.uri)}
-                  />
-                )}
-
-                {m.loading && (
-                  <View style={styles.mediaLoader}>
-                    <ActivityIndicator color="#fff" />
-                  </View>
-                )}
-
-                {!m.loading && (
-                  <Pressable
-                    style={styles.removeBtn}
-                    onPress={() => removeMedia(m.uri)}
-                  >
-                    <Ionicons name="close" size={16} color="white" />
-                  </Pressable>
-                )}
-              </View>
-            ))}
-          </ScrollView>
-        </View>
-      )}
-
-      {/* CAPTION */}
-      <View style={{ flex: 1 }}>
-        <View style={styles.composer}>
-          <TextInput
-            ref={inputRef}
-            autoFocus
-            multiline
-            scrollEnabled
-            value={caption}
-            onChangeText={setCaption}
-            placeholder="What's new?"
-            placeholderTextColor={Platform.OS === "web" ? "#8A8F98" : "#666"}
-            onFocus={() => {
-              setIsEditorFocused(true);
-            }}
-            onBlur={() => setIsEditorFocused(false)}
-            style={[
-              styles.editor,
-              { height: EDITOR_HEIGHT },
-              Platform.OS === "web" && styles.editorWeb,
-              Platform.OS === "web" &&
-                isEditorFocused &&
-                styles.editorWebFocused,
+      <KeyboardAvoidingView
+        style={styles.root}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
+      >
+        <View style={styles.header}>
+          <Pressable
+            onPress={handleBack}
+            style={({ pressed }) => [
+              styles.headerCancelBtn,
+              pressed && { opacity: 0.65 },
             ]}
-          />
+          >
+            <Body style={styles.headerCancelText}>Cancel</Body>
+          </Pressable>
+
+          <View style={styles.headerCenter}>
+            <Title style={styles.headerTitle}>
+              {isEditMode ? "Edit Entry" : "New Entry"}
+            </Title>
+          </View>
+
+          <Pressable
+            style={[
+              styles.headerAddBtn,
+              (!canSubmit || submitting) && styles.postBtnDisabled,
+            ]}
+            disabled={!canSubmit || submitting}
+            onPress={submit}
+          >
+            {submitting ? (
+              <ActivityIndicator size="small" color={Colors.dark.accent} />
+            ) : (
+              <Body style={styles.headerAddText}>Add</Body>
+            )}
+          </Pressable>
         </View>
-      </View>
 
-      {/* DATE PICKER */}
-      <Modal transparent visible={showDatePicker} animationType="fade">
-        <View style={styles.pickerOverlay}>
-          <View style={styles.pickerCard}>
-            <View style={styles.pickerHeader}>
-              <Title style={styles.pickerTitle}>Pick a date</Title>
-              <Muted>{new Date(`${pastDateString}T00:00:00`).toDateString()}</Muted>
-            </View>
-
-            <View style={styles.pickerChips}>
-              {quickPresets.map((preset) => {
-                const d = new Date();
-                d.setDate(d.getDate() + preset.offsetDays);
-                return (
+        {(!forcedBackfill && !isEditMode) || isBackfill ? (
+          <View style={styles.metaRow}>
+            {!forcedBackfill && !isEditMode ? (
+              <View style={styles.toggle}>
+                {["today", "past"].map((v) => (
                   <Pressable
-                    key={preset.label}
-                    onPress={() => setDateFromPreset(d)}
-                    style={({ pressed }) => [
-                      styles.chip,
-                      pressed && { opacity: 0.8 },
+                    key={v}
+                    onPress={() => {
+                      setEntryMode(v as "today" | "past");
+                      keepKeyboardOpen();
+                    }}
+                    style={[
+                      styles.toggleBtn,
+                      entryMode === v && styles.toggleActive,
                     ]}
                   >
-                    <Body style={styles.chipText}>{preset.label}</Body>
+                    <Body
+                      style={[
+                        styles.toggleText,
+                        entryMode === v && styles.toggleTextActive,
+                      ]}
+                    >
+                      {v === "today" ? "Today" : "Past"}
+                    </Body>
                   </Pressable>
-                );
-              })}
-            </View>
-
-            {Platform.OS === "web" ? (
-              <View style={styles.webDateInputWrap}>
-                <input
-                  type="date"
-                  value={pastDateString}
-                  max={new Date().toISOString().slice(0, 10)}
-                  onChange={(e) => {
-                    setPastDateString(e.target.value);
-                    setTempDate(new Date(`${e.target.value}T00:00:00`));
-                  }}
-                  style={{
-                    ...(styles.webDateInput as any),
-                    border: "none",
-                    outline: "none",
-                  }}
-                />
+                ))}
               </View>
             ) : (
-              <DateTimePicker
-                value={tempDate ?? new Date()}
-                mode="date"
-                display={Platform.OS === "ios" ? "spinner" : "default"}
-                maximumDate={new Date()}
-                onChange={(_, d) => {
-                  if (!d) return;
-                  const istDateString = toISTDateString(d);
-                  setTempDate(d);
-                  setPastDateString(istDateString);
-                }}
-              />
+              <View />
             )}
 
-            <View style={styles.pickerActions}>
-              <Pressable onPress={() => setShowDatePicker(false)}>
-                <Body style={{ color: "#aaa" }}>Cancel</Body>
-              </Pressable>
+            {isBackfill ? (
               <Pressable
                 onPress={() => {
-                  setShowDatePicker(false); // pastDateString already correct
+                  if (!isBackfill || isEditMode) return;
+                  setTempDate(new Date(`${pastDateString}T00:00:00`));
+                  setShowDatePicker(true);
                 }}
+                style={[
+                  styles.datePill,
+                  isEditMode && { opacity: 0.6 },
+                ]}
               >
-                <Ionicons name="checkmark-circle" size={28} color="#6C8CFF" />
+                <Ionicons
+                  name="calendar-outline"
+                  size={14}
+                  color={Colors.dark.accent}
+                />
+                <Muted style={styles.dateText}>
+                  {new Date(`${displayDate}T00:00:00`).toDateString()}
+                </Muted>
               </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+
+        {!!validationMessage && (
+          <View style={[styles.validationBanner, styles.validationInline]}>
+            <Body style={styles.validationText}>{validationMessage}</Body>
+          </View>
+        )}
+
+        <View style={styles.composerArea}>
+          <View style={styles.threadBody}>
+            <View style={styles.threadMetaRow}>
+              <Muted style={styles.threadTopic}>Add an entry</Muted>
+            </View>
+
+            <TextInput
+              ref={inputRef}
+              autoFocus
+              multiline
+              blurOnSubmit={false}
+              scrollEnabled={editorScrollable}
+              value={caption}
+              onChangeText={setCaption}
+              onContentSizeChange={handleEditorContentSizeChange}
+              placeholder="What's on your mind?"
+              placeholderTextColor="#666C78"
+              onFocus={() => setIsEditorFocused(true)}
+              onBlur={() => setIsEditorFocused(false)}
+              style={[
+                styles.editor,
+                { height: editorHeight },
+                Platform.OS === "web" && styles.editorWeb,
+                Platform.OS === "web" &&
+                  isEditorFocused &&
+                  styles.editorWebFocused,
+              ]}
+            />
+
+            {(visibleExistingAssetIds.length > 0 || media.length > 0) && (
+              <View style={styles.mediaSection}>
+                <View style={styles.mediaHeader}>
+                  <Muted style={styles.sectionLabel}>Media</Muted>
+                  <Muted style={styles.mediaCount}>
+                    {attachedCount}/{MAX_MEDIA_ITEMS}
+                  </Muted>
+                </View>
+                <View style={styles.mediaStripContainer}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.mediaStrip}
+                  >
+                    {visibleExistingAssetIds.map((assetId) => (
+                      <View key={`existing-${assetId}`} style={styles.mediaWrapper}>
+                        <Image
+                          source={{
+                            uri: apiUrl(`/api/media/immich/${assetId}?type=thumbnail`),
+                          }}
+                          style={styles.media}
+                        />
+                        <View style={styles.existingBadge}>
+                          <Body style={styles.existingBadgeText}>Saved</Body>
+                        </View>
+                        <Pressable
+                          style={styles.removeBtn}
+                          onPress={() => removeExistingMedia(assetId)}
+                        >
+                          <Ionicons name="close" size={16} color="white" />
+                        </Pressable>
+                      </View>
+                    ))}
+
+                    {media.map((m) => (
+                      <View key={m.uri} style={styles.mediaWrapper}>
+                        {m.type === "video" && Platform.OS === "web" && m.previewUri ? (
+                          <View style={styles.videoPreviewWrap}>
+                            <Image source={{ uri: m.previewUri }} style={styles.media} />
+                            <View style={styles.videoPreviewBadge}>
+                              <Ionicons name="play" size={14} color="#fff" />
+                            </View>
+                          </View>
+                        ) : m.type === "video" ? (
+                          <Video
+                            source={{ uri: m.uri }}
+                            style={styles.media}
+                            resizeMode={ResizeMode.COVER}
+                            useNativeControls
+                            onLoad={() => markLoaded(m.uri)}
+                            onReadyForDisplay={() => markLoaded(m.uri)}
+                          />
+                        ) : (
+                          <Image
+                            source={{ uri: m.uri }}
+                            style={styles.media}
+                            onLoadEnd={() => markLoaded(m.uri)}
+                          />
+                        )}
+
+                        {m.loading && (
+                          <View style={styles.mediaLoader}>
+                            <ActivityIndicator color="#fff" />
+                          </View>
+                        )}
+
+                        {!m.loading && (
+                          <Pressable
+                            style={styles.removeBtn}
+                            onPress={() => removeMedia(m.uri)}
+                          >
+                            <Ionicons name="close" size={16} color="white" />
+                          </Pressable>
+                        )}
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              </View>
+            )}
+
+            <View style={styles.inlineActionRow}>
+              <Pressable style={styles.inlineActionBtn} onPress={addFromGallery}>
+                <Ionicons
+                  name="images-outline"
+                  size={23}
+                  color={Colors.dark.textMuted}
+                />
+              </Pressable>
+              <Pressable style={styles.inlineActionBtn} onPress={captureFromCamera}>
+                <Ionicons
+                  name="camera-outline"
+                  size={23}
+                  color={Colors.dark.textMuted}
+                />
+              </Pressable>
+              {isBackfill && !isEditMode ? (
+                <Pressable
+                  style={styles.inlineActionBtn}
+                  onPress={() => {
+                    setTempDate(new Date(`${pastDateString}T00:00:00`));
+                    setShowDatePicker(true);
+                  }}
+                >
+                  <Ionicons
+                    name="calendar-outline"
+                    size={23}
+                    color={Colors.dark.textMuted}
+                  />
+                </Pressable>
+              ) : null}
             </View>
           </View>
         </View>
-      </Modal>
 
-      {/* SUCCESS MODAL */}
-      <Modal visible={showSuccess} transparent animationType="fade">
-        <View style={styles.successOverlay}>
-          <View style={styles.successCard}>
-            <Ionicons name="checkmark-circle" size={64} color="#6C8CFF" />
-            <Title>
-              {isEditMode
-                ? "Your changes will be securely synced to the cloud."
-                : "Your entry will be securely synced to the cloud."}
-            </Title>
-            <Muted>Redirecting in {countdown}s…</Muted>
+        {/* DATE PICKER */}
+        <Modal transparent visible={showDatePicker} animationType="fade">
+          <View style={styles.pickerOverlay}>
+            <View style={styles.pickerCard}>
+              <View style={styles.pickerHeader}>
+                <Title style={styles.pickerTitle}>Pick a date</Title>
+                <Muted>{new Date(`${pastDateString}T00:00:00`).toDateString()}</Muted>
+              </View>
+
+              <View style={styles.pickerChips}>
+                {quickPresets.map((preset) => {
+                  const d = new Date();
+                  d.setDate(d.getDate() + preset.offsetDays);
+                  return (
+                    <Pressable
+                      key={preset.label}
+                      onPress={() => setDateFromPreset(d)}
+                      style={({ pressed }) => [
+                        styles.chip,
+                        pressed && { opacity: 0.8 },
+                      ]}
+                    >
+                      <Body style={styles.chipText}>{preset.label}</Body>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {Platform.OS === "web" ? (
+                <View style={styles.webDateInputWrap}>
+                  <input
+                    type="date"
+                    value={pastDateString}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={(e) => {
+                      setPastDateString(e.target.value);
+                      setTempDate(new Date(`${e.target.value}T00:00:00`));
+                    }}
+                    style={{
+                      ...(styles.webDateInput as any),
+                      border: "none",
+                      outline: "none",
+                    }}
+                  />
+                </View>
+              ) : (
+                <DateTimePicker
+                  value={tempDate ?? new Date()}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  maximumDate={new Date()}
+                  onChange={(_, d) => {
+                    if (!d) return;
+                    const istDateString = toISTDateString(d);
+                    setTempDate(d);
+                    setPastDateString(istDateString);
+                  }}
+                />
+              )}
+
+              <View style={styles.pickerActions}>
+                <Pressable
+                  style={styles.pickerCancelBtn}
+                  onPress={() => setShowDatePicker(false)}
+                >
+                  <Body style={styles.pickerCancelText}>Cancel</Body>
+                </Pressable>
+                <Pressable
+                  style={styles.pickerConfirmBtn}
+                  onPress={() => {
+                    setShowDatePicker(false); // pastDateString already correct
+                  }}
+                >
+                  <Ionicons name="checkmark" size={20} color="white" />
+                </Pressable>
+              </View>
+            </View>
           </View>
-        </View>
-      </Modal>
-      </View>
+        </Modal>
+
+        {/* SUCCESS MODAL */}
+        <Modal visible={showSuccess} transparent animationType="fade">
+          <View style={styles.successOverlay}>
+            <View style={styles.successCard}>
+              <View style={styles.successIconBubble}>
+                <Ionicons name="checkmark" size={34} color="#6C8CFF" />
+              </View>
+              <Title style={styles.successTitle}>
+                {isEditMode
+                  ? "Your changes will be securely synced to the cloud."
+                  : "Your entry will be securely synced to the cloud."}
+              </Title>
+              <Muted>Redirecting in {countdown}s…</Muted>
+            </View>
+          </View>
+        </Modal>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
@@ -802,97 +944,175 @@ export default function AddEntryScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+    width: "100%",
+    alignSelf: "stretch",
+    marginHorizontal: -20,
     overflow: "hidden",
   },
   header: {
-    paddingHorizontal: 6,
-    paddingTop: 36,
-    paddingBottom: 16,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 12,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.09)",
   },
-  meta: { paddingHorizontal: 12 },
+  headerCancelBtn: {
+    minWidth: 76,
+    alignItems: "flex-start",
+    justifyContent: "center",
+    paddingVertical: 4,
+  },
+  headerCancelText: {
+    color: Colors.dark.textPrimary,
+    fontSize: 17,
+  },
+  headerAddBtn: {
+    minWidth: 76,
+    alignItems: "flex-end",
+    justifyContent: "center",
+    paddingVertical: 4,
+  },
+  headerAddText: {
+    color: Colors.dark.accent,
+    fontSize: 17,
+    fontWeight: "700",
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitle: {
+    fontSize: 18,
+    marginBottom: 0,
+  },
+  metaRow: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
   toggle: {
     flexDirection: "row",
-    backgroundColor: "#1F2328",
-    borderRadius: 16,
-    padding: 4,
+    backgroundColor: "#181C23",
+    borderRadius: 14,
+    padding: 3,
   },
-  toggleBtn: { flex: 1, paddingVertical: 6, alignItems: "center" },
-  toggleActive: { backgroundColor: "#2C3440", borderRadius: 12 },
-  dateLabel: { paddingHorizontal: 16, paddingBottom: 10, paddingTop: 10 },
+  toggleBtn: {
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    borderRadius: 11,
+  },
+  toggleActive: {
+    backgroundColor: "rgba(79,139,255,0.2)",
+  },
+  toggleText: {
+    color: Colors.dark.textSecondary,
+    fontSize: 13,
+  },
+  toggleTextActive: {
+    color: Colors.dark.textPrimary,
+  },
   datePill: {
     flexDirection: "row",
     alignItems: "center",
-    alignSelf: "flex-start",
-    gap: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    gap: 6,
+    minHeight: 32,
+    paddingVertical: 5,
+    paddingHorizontal: 11,
     borderRadius: 999,
-    backgroundColor: "rgba(108,140,255,0.08)",
+    backgroundColor: "rgba(108,140,255,0.1)",
     borderWidth: 1,
     borderColor: "rgba(108,140,255,0.25)",
   },
   dateText: {
     color: "#C9D4FF",
+    fontSize: 12,
   },
-  actions: {
+  composerArea: {
+    flex: 1,
+    minHeight: 0,
+    paddingTop: 8,
+    paddingHorizontal: 20,
+  },
+  threadBody: {
+    flex: 1,
+    minHeight: 0,
+    paddingBottom: 10,
+  },
+  threadMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  threadTopic: {
+    flex: 1,
+    color: Colors.dark.textMuted,
+    fontSize: 15,
+  },
+  editor: {
+    minHeight: MIN_EDITOR_HEIGHT,
+    maxHeight: MAX_EDITOR_HEIGHT,
+    fontSize: 19,
+    lineHeight: 29,
+    color: Colors.dark.textPrimary,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    textAlignVertical: "top",
+  },
+  editorWeb: {
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingTop: 4,
+  },
+  editorWebFocused: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: "#121620",
+  },
+  mediaSection: {
+    marginTop: 12,
+  },
+  mediaHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 8,
     alignItems: "center",
-  },
-  actionLeft: { flexDirection: "row", gap: 12 },
-  iconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#1F2328",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  saveBtn: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: "#6C8CFF",
-  },
-  validationBanner: {
-    marginHorizontal: 16,
     marginBottom: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: "rgba(228,88,88,0.15)",
-    borderWidth: 1,
-    borderColor: "rgba(228,88,88,0.45)",
   },
-  validationText: {
+  sectionLabel: {
+    textTransform: "uppercase",
+    fontSize: 11,
+    letterSpacing: 1.1,
+    color: Colors.dark.textMuted,
+  },
+  mediaCount: {
+    color: Colors.dark.textMuted,
     fontSize: 12,
-    lineHeight: 17,
-    color: "#FFD5D5",
   },
   mediaStripContainer: {
-    height: 120, // ✅ fixed height
-    marginVertical: 0,
+    height: 114,
   },
-
   mediaStrip: {
-    paddingHorizontal: 12,
+    paddingRight: 10,
     alignItems: "center",
   },
-
   mediaWrapper: {
     width: 96,
     height: 96,
     marginRight: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     overflow: "hidden",
     backgroundColor: "#111",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.09)",
   },
-
   media: {
     width: "100%",
     height: "100%",
@@ -914,7 +1134,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.35)",
   },
-
   existingBadge: {
     position: "absolute",
     left: 6,
@@ -924,31 +1143,16 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "rgba(0,0,0,0.6)",
   },
-
   existingBadgeText: {
     fontSize: 10,
     color: "#fff",
   },
-
-  editorWeb: {
-    borderWidth: 1,
-    borderColor: "#2C3440",
-    borderRadius: 14,
-    padding: 12,
-  },
-
-  editorWebFocused: {
-    borderColor: "#6C8CFF",
-    backgroundColor: "#0F1115",
-  },
-
   mediaLoader: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "center",
     alignItems: "center",
   },
-
   removeBtn: {
     position: "absolute",
     top: 6,
@@ -960,10 +1164,41 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
-  composer: { paddingHorizontal: 16, paddingVertical: 2 },
-  editor: { fontSize: 20, color: "white" },
-
+  inlineActionRow: {
+    marginTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  inlineActionBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  validationBanner: {
+    marginBottom: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: "rgba(228,88,88,0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(228,88,88,0.45)",
+  },
+  validationText: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: "#FFD5D5",
+  },
+  validationInline: {
+    marginHorizontal: 20,
+    marginTop: 8,
+    marginBottom: 0,
+  },
+  postBtnDisabled: {
+    opacity: 0.45,
+  },
   pickerOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
@@ -971,10 +1206,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   pickerCard: {
-    backgroundColor: "#1F2328",
+    backgroundColor: "#1A1F27",
     borderRadius: 22,
-    padding: 16,
+    padding: 18,
     width: "90%",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
   },
   pickerHeader: {
     gap: 4,
@@ -1016,11 +1253,30 @@ const styles = StyleSheet.create({
     padding: 6,
   },
   pickerActions: {
-    marginTop: 12,
+    marginTop: 14,
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
+    gap: 10,
   },
-
+  pickerCancelBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  pickerCancelText: {
+    color: Colors.dark.textSecondary,
+  },
+  pickerConfirmBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.dark.accent,
+  },
   successOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
@@ -1028,10 +1284,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   successCard: {
-    backgroundColor: "#1F2328",
+    backgroundColor: "#1A1F27",
     borderRadius: 24,
     padding: 24,
     alignItems: "center",
     width: "80%",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  successIconBubble: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    marginBottom: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(108,140,255,0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(108,140,255,0.35)",
+  },
+  successTitle: {
+    textAlign: "center",
+    marginBottom: 6,
   },
 });

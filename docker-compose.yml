@@ -20,6 +20,9 @@ services:
     restart: always
   frontend-dev:
     profiles: ["dev"]
+    depends_on:
+      backend-dev:
+        condition: service_healthy
     build:
       context: ./frontend/this-day
       args:
@@ -50,6 +53,9 @@ services:
 
   frontend-prod:
     profiles: ["prod"]
+    depends_on:
+      backend-prod:
+        condition: service_healthy
     build:
       context: ./frontend/this-day
       args:

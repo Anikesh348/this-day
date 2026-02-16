@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { CalendarList } from "react-native-calendars";
+import { LinearGradient } from "expo-linear-gradient";
 
 import { getCalendar } from "@/services/entries";
 import { Colors } from "@/theme/colors";
@@ -24,6 +25,7 @@ const MARGIN = 10;
 const GAP = 8;
 const DAY_SIZE =
   (SCREEN_WIDTH - MARGIN * 2 - GAP * (COLUMN_COUNT - 1)) / COLUMN_COUNT;
+const CARD_MAX_WIDTH = 540;
 
 /**
  * 🔧 Helper: get today's date string in IST (YYYY-MM-DD)
@@ -51,6 +53,7 @@ export default function CalendarScreen() {
 
   const todayString = getTodayISTString();
   const currentMonth = todayString.substring(0, 7) + "-01";
+  const entriesCount = Object.keys(entries).length;
 
   /**
    * 🧠 Load month exactly once (layout-safe)
@@ -113,7 +116,10 @@ export default function CalendarScreen() {
   const renderDay = useCallback(
     ({ date, state }: any) => {
       const entry = entries[date.dateString];
-      const hasEntry = !!entry?.immichAssetId;
+      const hasAnyEntry = !!entry?.hasEntries;
+      const hasMedia = !!entry?.immichAssetId;
+      const hasCaption = entry?.hasCaption === true;
+      const hasCaptionOnly = hasCaption && !hasMedia;
       const assetId = entry?.immichAssetId;
 
       const isToday = date.dateString === todayString;
@@ -146,10 +152,18 @@ export default function CalendarScreen() {
               isDisabled && { opacity: 0.15 },
             ]}
           >
+            <LinearGradient
+              pointerEvents="none"
+              colors={["rgba(79,139,255,0.18)", "rgba(79,139,255,0.02)"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.dayOverlay}
+            />
+
             {/* 🔒 Image layer ALWAYS mounted */}
             <Image
               source={
-                hasEntry
+                hasMedia
                   ? {
                       uri: apiUrl(
                         `/api/media/immich/${assetId}?type=thumbnail`,
@@ -157,11 +171,11 @@ export default function CalendarScreen() {
                     }
                   : undefined
               }
-              style={[styles.dayImage, { opacity: hasEntry ? 1 : 0 }]}
+              style={[styles.dayImage, { opacity: hasMedia ? 1 : 0 }]}
             />
 
             {/* ❌ No-entry cross */}
-            {!hasEntry && !isFuture && !isToday && !isDisabled && (
+            {!hasAnyEntry && !isFuture && !isToday && !isDisabled && (
               <View style={styles.crossContainer}>
                 <View style={styles.crossLine} />
                 <View
@@ -169,6 +183,17 @@ export default function CalendarScreen() {
                     styles.crossLine,
                     { transform: [{ rotate: "-45deg" }] },
                   ]}
+                />
+              </View>
+            )}
+
+            {/* ✍️ Caption-only marker */}
+            {hasCaptionOnly && !isFuture && !isDisabled && (
+              <View style={styles.captionOnlyCenterWrap}>
+                <Ionicons
+                  name="document-text-outline"
+                  size={18}
+                  color="rgba(255,255,255,0.9)"
                 />
               </View>
             )}
@@ -198,17 +223,18 @@ export default function CalendarScreen() {
         <View style={styles.headerText}>
           <Title>Calendar</Title>
           <Muted style={styles.subtitle}>Browse by day</Muted>
+          <Muted style={styles.entriesMeta}>
+            {entriesCount} {entriesCount === 1 ? "entry" : "entries"} loaded
+          </Muted>
         </View>
         <Pressable
           onPress={refreshCalendar}
-          style={({ pressed }) => [
-            styles.refreshBtn,
-            pressed && { opacity: 0.6 },
-          ]}
+          style={({ pressed }) => [styles.refreshBtn, pressed && { opacity: 0.6 }]}
         >
-          <Ionicons name="refresh" size={26} color={Colors.dark.textMuted} />
+          <Ionicons name="refresh" size={24} color={Colors.dark.textMuted} />
         </Pressable>
       </View>
+
       <CalendarList
         current={currentMonth}
         pastScrollRange={12}
@@ -217,7 +243,7 @@ export default function CalendarScreen() {
         calendarWidth={SCREEN_WIDTH}
         calendarHeight={SCREEN_WIDTH * 1.2} // 🔒 harder lock
         removeClippedSubviews={false} // 🔑 no recycling bounce
-        contentContainerStyle={{ paddingBottom: 100 }}
+        contentContainerStyle={styles.calendarContent}
         onVisibleMonthsChange={(months) => {
           if (monthLoadTimeout.current) {
             clearTimeout(monthLoadTimeout.current);
@@ -240,11 +266,11 @@ export default function CalendarScreen() {
                 flexDirection: "row",
                 justifyContent: "flex-start",
                 paddingLeft: MARGIN,
-                marginTop: 20,
+                marginTop: 12,
                 marginBottom: 10,
               },
               monthText: {
-                fontSize: 28,
+                fontSize: 30,
                 fontWeight: "800",
                 color: "white",
               },
@@ -266,20 +292,37 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingTop: 18,
+    width: "100%",
+    maxWidth: CARD_MAX_WIDTH,
+    alignSelf: "center",
+    paddingTop: 12,
     paddingHorizontal: MARGIN,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   headerText: {
     alignItems: "flex-start",
   },
   subtitle: {
-    marginTop: 4,
+    marginTop: 3,
     opacity: 0.75,
   },
+  entriesMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    color: Colors.dark.textMuted,
+  },
   refreshBtn: {
-    padding: 8,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  calendarContent: {
+    paddingBottom: 100,
   },
   dayCell: {
     width: DAY_SIZE + GAP / 2,
@@ -290,14 +333,21 @@ const styles = StyleSheet.create({
   visualContainer: {
     width: DAY_SIZE,
     height: DAY_SIZE,
-    borderRadius: 12,
+    borderRadius: 14,
     overflow: "hidden",
-    backgroundColor: "#161616",
+    backgroundColor: "rgba(255,255,255,0.03)",
     position: "relative",
-
-    // 🔒 Border ALWAYS present
     borderWidth: 2,
-    borderColor: "transparent",
+    borderColor: "rgba(255,255,255,0.06)",
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 4,
+  },
+
+  dayOverlay: {
+    ...StyleSheet.absoluteFillObject,
   },
   todayOutline: {
     borderColor: Colors.dark.accent,
@@ -311,13 +361,13 @@ const styles = StyleSheet.create({
   },
   futureDay: {
     backgroundColor: "transparent",
-    borderColor: "#222",
+    borderColor: "rgba(255,255,255,0.08)",
   },
   dateBadge: {
     position: "absolute",
     top: 5,
     left: 5,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(0,0,0,0.55)",
     paddingHorizontal: 5,
     borderRadius: 5,
     minWidth: 18,
@@ -332,18 +382,21 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   crossContainer: {
-    position: "absolute",
-    width: 14,
-    height: 14,
-    opacity: 0.15,
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.2,
     justifyContent: "center",
     alignItems: "center",
   },
   crossLine: {
     position: "absolute",
-    width: 14,
-    height: 1.5,
+    width: 22,
+    height: 2.2,
     backgroundColor: "#fff",
     transform: [{ rotate: "45deg" }],
+  },
+  captionOnlyCenterWrap: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

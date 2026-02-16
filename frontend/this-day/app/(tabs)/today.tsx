@@ -2,9 +2,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 
 import { Screen } from "@/components/Screen";
-import { Body, Muted, Title } from "@/components/Text";
+import { Body, Muted } from "@/components/Text";
 import {
   getSameDayPreviousMonths,
   getSameDayPreviousYears,
@@ -20,13 +21,45 @@ interface Entry {
   immichAssetIds?: string[];
 }
 
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+function toISTDateString(date: Date) {
+  const ist = new Date(date.getTime() + (5 * 60 + 30) * 60 * 1000);
+  return ist.toISOString().slice(0, 10);
+}
+
+function parseDateString(dateString: string) {
+  const [year, month, day] = dateString.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function formatStandardDateLabel(dateString: string) {
+  const [year, month, day] = dateString.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  });
+}
+
+function getHeaderDateLabel(dateString: string) {
+  const [year, month, day] = dateString.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-IN", {
+    weekday: "long",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  });
+}
+
 export default function TodayScreen() {
   const router = useRouter();
 
-  // 🆕 read `from`
   const { date, from } = useLocalSearchParams<{
     date?: string;
-    from?: "calendar";
+    from?: "calendar" | "day";
   }>();
 
   const [today, setToday] = useState<Entry | null>(null);
@@ -35,11 +68,20 @@ export default function TodayScreen() {
   const [videoIds, setVideoIds] = useState<Record<string, true>>({});
   const checkedIds = useRef(new Set<string>());
 
-  const targetDate = useMemo(() => {
-    if (!date) return new Date();
-    const parsed = new Date(date);
-    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  const selectedDateString = useMemo(() => {
+    if (date && DATE_REGEX.test(date)) return date;
+    return toISTDateString(new Date());
   }, [date]);
+
+  const targetDate = useMemo(() => {
+    return parseDateString(selectedDateString);
+  }, [selectedDateString]);
+
+  const isViewingToday = selectedDateString === toISTDateString(new Date());
+  const topCardLabel = isViewingToday
+    ? "Today"
+    : formatStandardDateLabel(selectedDateString);
+  const showBack = from === "calendar" || from === "day";
 
   const loadData = async () => {
     setLoading(true);
@@ -119,15 +161,9 @@ export default function TodayScreen() {
   };
 
   const formatDate = (date: string) => {
-    const [y, m, d] = date.split("-").map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString(undefined, {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
+    return formatStandardDateLabel(date);
   };
 
-  // 🆕 back handler
   const handleBack = () => {
     router.replace("/calendar");
   };
@@ -137,12 +173,32 @@ export default function TodayScreen() {
     const hasCaption = entry.caption && entry.caption.trim().length > 0;
 
     return (
-      <Pressable style={styles.card} onPress={() => openDay(entry.date)}>
+      <Pressable
+        style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+        onPress={() => openDay(entry.date)}
+      >
+        <LinearGradient
+          pointerEvents="none"
+          colors={["rgba(79,139,255,0.2)", "rgba(79,139,255,0.02)"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.cardGradient}
+        />
+
         <View style={styles.cardHeader}>
-          <Muted style={styles.cardLabel}>{label}</Muted>
-          {showDateHint && (
-            <Muted style={styles.dateHint}>{formatDate(entry.date)}</Muted>
-          )}
+          <View>
+            <Muted style={styles.cardLabel}>{label}</Muted>
+            {showDateHint && (
+              <Muted style={styles.dateHint}>{formatDate(entry.date)}</Muted>
+            )}
+          </View>
+          <View style={styles.cardArrow}>
+            <Ionicons
+              name="chevron-forward"
+              size={16}
+              color={Colors.dark.textMuted}
+            />
+          </View>
         </View>
 
         {assetId && (
@@ -177,39 +233,17 @@ export default function TodayScreen() {
 
   const renderEmpty = (label: string) => (
     <View style={[styles.card, styles.emptyCard]}>
+      <View style={styles.emptyIcon}>
+        <Ionicons
+          name="calendar-clear-outline"
+          size={22}
+          color={Colors.dark.textMuted}
+        />
+      </View>
       <Muted style={styles.cardLabel}>{label}</Muted>
-      <Muted>No entries yet</Muted>
+      <Muted style={styles.emptyText}>No entries yet</Muted>
     </View>
   );
-
-  function getHeaderDateLabel(date?: string) {
-    // Use provided YYYY-MM-DD as IST date if valid
-    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      const [y, m, d] = date.split("-").map(Number);
-
-      // Create date explicitly in IST (no UTC parsing)
-      const istDate = new Date(
-        Date.UTC(y, m - 1, d, 0, 0, 0) + 5.5 * 60 * 60 * 1000,
-      );
-
-      return istDate.toLocaleDateString("en-IN", {
-        weekday: "long",
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-        timeZone: "Asia/Kolkata",
-      });
-    }
-
-    // Fallback → real "today" in IST
-    return new Date().toLocaleDateString("en-IN", {
-      weekday: "long",
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-      timeZone: "Asia/Kolkata",
-    });
-  }
 
   return (
     <Screen>
@@ -219,32 +253,42 @@ export default function TodayScreen() {
       >
         {/* HEADER */}
         <View style={styles.headerRow}>
-          {["calendar", "day"].includes(from) ? (
-            <Pressable onPress={handleBack} style={styles.backBtn}>
-              <Ionicons name="chevron-back" size={26} color="white" />
-            </Pressable>
-          ) : (
-            <View style={styles.backBtn} />
-          )}
+          <View style={styles.headerSide}>
+            {showBack ? (
+              <Pressable onPress={handleBack} style={styles.iconBtn}>
+                <Ionicons name="chevron-back" size={26} color="white" />
+              </Pressable>
+            ) : (
+              <View style={styles.iconSpacer} />
+            )}
+          </View>
 
           <View style={styles.headerCenter}>
-            <Muted style={styles.subtitle}>{getHeaderDateLabel(date)}</Muted>
+            <Muted style={styles.subtitle}>
+              {getHeaderDateLabel(selectedDateString)}
+            </Muted>
             <Muted style={[styles.subtitle, styles.tagline]}>
               Private. Calm. Timeless.
             </Muted>
           </View>
 
-          <Pressable
-            onPress={loadData}
-            disabled={loading}
-            style={({ pressed }) => [
-              styles.refreshBtn,
-              pressed && { opacity: 0.6 },
-              loading && { opacity: 0.4 },
-            ]}
-          >
-            <Ionicons name="refresh" size={30} color={Colors.dark.textMuted} />
-          </Pressable>
+          <View style={styles.headerSide}>
+            <Pressable
+              onPress={loadData}
+              disabled={loading}
+              style={({ pressed }) => [
+                styles.iconBtn,
+                pressed && { opacity: 0.6 },
+                loading && { opacity: 0.4 },
+              ]}
+            >
+              <Ionicons
+                name="refresh"
+                size={30}
+                color={Colors.dark.textMuted}
+              />
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.stack}>
@@ -252,7 +296,9 @@ export default function TodayScreen() {
 
           {!loading && (
             <>
-              {today ? renderCard(today, "Today") : renderEmpty("Today")}
+              {today
+                ? renderCard(today, topCardLabel)
+                : renderEmpty(topCardLabel)}
               {previous
                 ? renderCard(previous, "From Your Past", true)
                 : renderEmpty("From Your Past")}
@@ -283,7 +329,7 @@ export default function TodayScreen() {
 
 const styles = StyleSheet.create({
   scroll: {
-    paddingTop: 40,
+    paddingTop: 24,
     paddingBottom: 120,
     paddingHorizontal: 6,
   },
@@ -291,67 +337,109 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    width: "100%",
+    maxWidth: 480,
+    alignSelf: "center",
     marginBottom: 28,
   },
 
-  // 🆕
-  backBtn: {
-    width: 34,
-    padding: 6,
-    alignItems: "flex-start",
+  headerSide: {
+    width: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
-  headerText: {
+  iconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
-    flex: 1,
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  iconSpacer: {
+    width: 44,
+    height: 44,
   },
 
   subtitle: {
     marginTop: 4,
+    textAlign: "center",
     opacity: 0.85,
-  },
-
-  refreshBtn: {
-    position: "absolute",
-    right: 0,
-    padding: 8,
-    borderRadius: 20,
   },
 
   stack: {
     width: "100%",
     maxWidth: 480,
     alignSelf: "center",
-    gap: 22,
+    gap: 18,
   },
 
   card: {
-    backgroundColor: "#1C1F24",
+    backgroundColor: "rgba(255,255,255,0.04)",
     borderRadius: 26,
-    padding: 18,
+    padding: 16,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
+    borderColor: "rgba(255,255,255,0.1)",
+    overflow: "hidden",
+  },
+
+  cardPressed: {
+    opacity: 0.86,
   },
 
   emptyCard: {
     alignItems: "center",
-    paddingVertical: 32,
+    paddingVertical: 28,
   },
 
   cardHeader: {
-    marginBottom: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+
+  cardGradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
+
+  cardArrow: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.04)",
   },
 
   cardLabel: {
     fontSize: 13,
-    letterSpacing: 0.4,
+    letterSpacing: 0.5,
+    color: Colors.dark.textSecondary,
   },
 
   dateHint: {
     marginTop: 2,
     fontSize: 12,
-    opacity: 0.7,
+    color: Colors.dark.textMuted,
+  },
+
+  emptyIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    marginBottom: 8,
+  },
+
+  emptyText: {
+    marginTop: 4,
+    opacity: 0.78,
   },
 
   image: {
@@ -362,8 +450,8 @@ const styles = StyleSheet.create({
 
   imageWrap: {
     width: "100%",
-    height: 230,
-    borderRadius: 18,
+    height: 236,
+    borderRadius: 20,
     overflow: "hidden",
     position: "relative",
   },
@@ -385,12 +473,13 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 8,
   },
 
   captionPreview: {
-    fontSize: 15,
+    fontSize: 16,
     lineHeight: 22,
-    opacity: 0.9,
+    opacity: 0.95,
   },
 
   fabOuter: {
@@ -400,26 +489,26 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: "rgba(108,140,255,0.18)",
+    backgroundColor: "rgba(79,139,255,0.24)",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#6C8CFF",
-    shadowOpacity: 0.5,
-    shadowRadius: 32,
-    elevation: 20,
+    shadowOpacity: 0.4,
+    shadowRadius: 28,
+    elevation: 14,
   },
 
   fabInner: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: "#6C8CFF",
+    backgroundColor: Colors.dark.accent,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 10,
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 7,
   },
   tagline: {
     opacity: 0.7,
