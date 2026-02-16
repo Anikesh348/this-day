@@ -3,7 +3,7 @@ FROM node:20-alpine AS build
 ARG APP_ENV=prod
 WORKDIR /app
 
-COPY package.json yarn.lock ./
+COPY package.json yarn.lock .yarnrc.yml ./
 RUN --mount=type=cache,target=/usr/local/share/.cache/yarn \
     yarn install --frozen-lockfile
 
@@ -11,11 +11,8 @@ RUN --mount=type=cache,target=/usr/local/share/.cache/yarn \
 COPY . .
 
 # Select env file at build time (dev/prod)
-ARG APP_ENV=prod
 RUN if [ -f ".env.${APP_ENV}" ]; then cp ".env.${APP_ENV}" .env; fi
 
-# Ensure the app is exported for web specifically
-# The --platform web flag is key here
 RUN npx expo export --platform web
 
 # ---------- Runtime ----------

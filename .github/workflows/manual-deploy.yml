@@ -3,10 +3,6 @@ name: Manual Deploy ThisDay (Docker Build + Up)
 on:
   workflow_dispatch:
     inputs:
-      branch:
-        description: "Git branch to deploy"
-        required: true
-        default: "feat/thisDay"
       environment:
         description: "Environment to deploy"
         required: true
@@ -46,7 +42,7 @@ jobs:
           script: |
             set -euxo pipefail
 
-            DEPLOY_BRANCH="${{ github.event.inputs.branch }}"
+            DEPLOY_BRANCH="${{ github.ref_name }}"
             APP_ENV="${{ github.event.inputs.environment }}"
 
             echo "====================================="
