@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { Screen } from "@/components/Screen";
-import { Body, Muted, Title } from "@/components/Text";
+import { Body, Muted } from "@/components/Text";
 import {
   getSameDayPreviousMonths,
   getSameDayPreviousYears,
@@ -20,13 +20,35 @@ interface Entry {
   immichAssetIds?: string[];
 }
 
+const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+
+function toISTDateKey(value: Date) {
+  return new Date(value.getTime() + IST_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+function parseDateKey(rawDate?: string) {
+  if (rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)) return rawDate;
+  return toISTDateKey(new Date());
+}
+
+function formatDayDateLabel(dateKey: string) {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const stableDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  return stableDate.toLocaleDateString("en-IN", {
+    weekday: "long",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  });
+}
+
 export default function TodayScreen() {
   const router = useRouter();
 
-  // 🆕 read `from`
   const { date, from } = useLocalSearchParams<{
     date?: string;
-    from?: "calendar";
+    from?: "calendar" | "day" | "today";
   }>();
 
   const [today, setToday] = useState<Entry | null>(null);
@@ -35,18 +57,12 @@ export default function TodayScreen() {
   const [videoIds, setVideoIds] = useState<Record<string, true>>({});
   const checkedIds = useRef(new Set<string>());
 
-  const targetDate = useMemo(() => {
-    if (!date) return new Date();
-    const parsed = new Date(date);
-    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-  }, [date]);
+  const targetDateKey = useMemo(() => parseDateKey(date), [date]);
 
   const loadData = async () => {
     setLoading(true);
 
-    const y = targetDate.getFullYear();
-    const m = targetDate.getMonth() + 1;
-    const day = targetDate.getDate();
+    const [y, m, day] = targetDateKey.split("-").map(Number);
 
     const [todayRes, yearRes, monthRes] = await Promise.allSettled([
       getSameDaySummary(y, m, day),
@@ -77,7 +93,7 @@ export default function TodayScreen() {
   useFocusEffect(
     useCallback(() => {
       loadData();
-    }, [targetDate]),
+    }, [targetDateKey]),
   );
 
   useEffect(() => {
@@ -182,34 +198,11 @@ export default function TodayScreen() {
     </View>
   );
 
-  function getHeaderDateLabel(date?: string) {
-    // Use provided YYYY-MM-DD as IST date if valid
-    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      const [y, m, d] = date.split("-").map(Number);
-
-      // Create date explicitly in IST (no UTC parsing)
-      const istDate = new Date(
-        Date.UTC(y, m - 1, d, 0, 0, 0) + 5.5 * 60 * 60 * 1000,
-      );
-
-      return istDate.toLocaleDateString("en-IN", {
-        weekday: "long",
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-        timeZone: "Asia/Kolkata",
-      });
-    }
-
-    // Fallback → real "today" in IST
-    return new Date().toLocaleDateString("en-IN", {
-      weekday: "long",
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-      timeZone: "Asia/Kolkata",
-    });
-  }
+  const showBackButton = from === "calendar" || from === "day";
+  const primaryCardLabel =
+    targetDateKey === toISTDateKey(new Date())
+      ? "Today"
+      : formatDayDateLabel(targetDateKey);
 
   return (
     <Screen>
@@ -219,32 +212,40 @@ export default function TodayScreen() {
       >
         {/* HEADER */}
         <View style={styles.headerRow}>
-          {["calendar", "day"].includes(from) ? (
-            <Pressable onPress={handleBack} style={styles.backBtn}>
-              <Ionicons name="chevron-back" size={26} color="white" />
-            </Pressable>
-          ) : (
-            <View style={styles.backBtn} />
-          )}
+          <View style={styles.headerSide}>
+            {showBackButton ? (
+              <Pressable onPress={handleBack} style={styles.sideBtn}>
+                <Ionicons name="chevron-back" size={26} color="white" />
+              </Pressable>
+            ) : (
+              <View style={styles.sideBtn} />
+            )}
+          </View>
 
           <View style={styles.headerCenter}>
-            <Muted style={styles.subtitle}>{getHeaderDateLabel(date)}</Muted>
+            <Muted style={styles.subtitle}>{formatDayDateLabel(targetDateKey)}</Muted>
             <Muted style={[styles.subtitle, styles.tagline]}>
               Private. Calm. Timeless.
             </Muted>
           </View>
 
-          <Pressable
-            onPress={loadData}
-            disabled={loading}
-            style={({ pressed }) => [
-              styles.refreshBtn,
-              pressed && { opacity: 0.6 },
-              loading && { opacity: 0.4 },
-            ]}
-          >
-            <Ionicons name="refresh" size={30} color={Colors.dark.textMuted} />
-          </Pressable>
+          <View style={styles.headerSide}>
+            <Pressable
+              onPress={loadData}
+              disabled={loading}
+              style={({ pressed }) => [
+                styles.sideBtn,
+                pressed && { opacity: 0.6 },
+                loading && { opacity: 0.4 },
+              ]}
+            >
+              <Ionicons
+                name="refresh"
+                size={28}
+                color={Colors.dark.textMuted}
+              />
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.stack}>
@@ -252,7 +253,9 @@ export default function TodayScreen() {
 
           {!loading && (
             <>
-              {today ? renderCard(today, "Today") : renderEmpty("Today")}
+              {today
+                ? renderCard(today, primaryCardLabel)
+                : renderEmpty(primaryCardLabel)}
               {previous
                 ? renderCard(previous, "From Your Past", true)
                 : renderEmpty("From Your Past")}
@@ -291,32 +294,26 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     marginBottom: 28,
   },
 
-  // 🆕
-  backBtn: {
-    width: 34,
-    padding: 6,
-    alignItems: "flex-start",
+  headerSide: {
+    width: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
-  headerText: {
+  sideBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: "center",
-    flex: 1,
+    justifyContent: "center",
   },
 
   subtitle: {
     marginTop: 4,
     opacity: 0.85,
-  },
-
-  refreshBtn: {
-    position: "absolute",
-    right: 0,
-    padding: 8,
-    borderRadius: 20,
   },
 
   stack: {

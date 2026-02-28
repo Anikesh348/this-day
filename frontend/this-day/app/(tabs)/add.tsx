@@ -444,38 +444,7 @@ export default function AddEntryScreen() {
 
     try {
       const trimmedCaption = caption.trim();
-      const totalMediaCount = visibleExistingAssetIds.length + media.length;
-
-      if (!trimmedCaption && totalMediaCount === 0) {
-        setValidationMessage("Add a caption or at least one media item.");
-        return;
-      }
-
-      const { validAssets, skippedLongVideoCount, skippedUnknownVideoCount } =
-        await validateVideoAssets(media);
-
-      if (
-        skippedLongVideoCount > 0 ||
-        skippedUnknownVideoCount > 0 ||
-        validAssets.length !== media.length
-      ) {
-        const messages: string[] = [];
-        if (skippedLongVideoCount > 0) {
-          messages.push(
-            `${skippedLongVideoCount} selected video${skippedLongVideoCount > 1 ? "s exceed" : " exceeds"} 10 seconds.`,
-          );
-        }
-        if (skippedUnknownVideoCount > 0) {
-          messages.push(
-            `${skippedUnknownVideoCount} selected video${skippedUnknownVideoCount > 1 ? "s have" : " has"} unknown duration.`,
-          );
-        }
-        messages.push("Please remove invalid videos before saving.");
-        setValidationMessage(messages.join("\n"));
-        return;
-      }
-
-      const files = validAssets.map((m) => ({
+      const files = media.map((m) => ({
         uri: m.uri,
         name: getFileName(m),
         type: getMimeType(m),
