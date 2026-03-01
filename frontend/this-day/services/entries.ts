@@ -148,7 +148,7 @@ export async function updateEntry(
     await appendFile(form, file);
   }
 
-  return api.put(`/api/entries/${entryId}`, form);
+  return api.post(`/api/entries/${entryId}/update`, form);
 }
 
 export function deleteEntry(entryId: string) {

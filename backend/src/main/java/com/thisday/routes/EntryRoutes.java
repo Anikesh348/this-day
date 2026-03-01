@@ -201,36 +201,13 @@ public class EntryRoutes {
         router.put("/api/entries/:entryId")
                 .handler(BodyHandler.create().setDeleteUploadedFilesOnEnd(false))
                 .handler(authHandler)
-                .handler(ctx -> {
+                .handler(ctx -> handleUpdateEntry(ctx, entryService));
 
-                    String entryId = ctx.pathParam("entryId");
-                    String userId = ctx.<JsonObject>get("authUser").getString("sub");
-
-                    String caption = ctx.request().getFormAttribute("caption");
-
-                    String removeAssetsRaw = ctx.request().getFormAttribute("removeAssetIds");
-
-                    List<String> removeAssetIds = removeAssetsRaw == null
-                            ? List.of()
-                            : new JsonArray(removeAssetsRaw).getList();
-
-                    List<MultipartForm> newMedia = buildForms(ctx.fileUploads(), userId);
-
-                    entryService.updateEntry(
-                            entryId,
-                            userId,
-                            caption,
-                            newMedia,
-                            removeAssetIds
-                    ).onComplete(ar -> {
-                        if (ar.failed()) {
-                            log.error("Update entry failed", ar.cause());
-                            ctx.fail(500);
-                        } else {
-                            ctx.response().setStatusCode(204).end();
-                        }
-                    });
-                });
+        // Multipart PUT can be flaky across some clients/proxies; POST mirror for compatibility.
+        router.post("/api/entries/:entryId/update")
+                .handler(BodyHandler.create().setDeleteUploadedFilesOnEnd(false))
+                .handler(authHandler)
+                .handler(ctx -> handleUpdateEntry(ctx, entryService));
 
         // DELETE ENTRY (hard delete)
         router.delete("/api/entries/:entryId")
@@ -309,5 +286,52 @@ public class EntryRoutes {
         });
 
         return forms;
+    }
+
+    private static void handleUpdateEntry(
+            io.vertx.ext.web.RoutingContext ctx,
+            EntryService entryService
+    ) {
+        String entryId = ctx.pathParam("entryId");
+        String userId = ctx.<JsonObject>get("authUser").getString("sub");
+
+        String caption = ctx.request().getFormAttribute("caption");
+        String removeAssetsRaw = ctx.request().getFormAttribute("removeAssetIds");
+
+        List<String> removeAssetIds = new ArrayList<>();
+        if (removeAssetsRaw != null && !removeAssetsRaw.isBlank()) {
+            try {
+                JsonArray parsed = new JsonArray(removeAssetsRaw);
+                for (Object value : parsed) {
+                    if (value instanceof String stringValue && !stringValue.isBlank()) {
+                        removeAssetIds.add(stringValue);
+                    }
+                }
+            } catch (Exception ex) {
+                ctx.response()
+                        .setStatusCode(400)
+                        .putHeader("Content-Type", "application/json")
+                        .end(new JsonObject()
+                                .put("error", "removeAssetIds must be a JSON string array")
+                                .encode());
+                return;
+            }
+        }
+
+        List<MultipartForm> newMedia = buildForms(ctx.fileUploads(), userId);
+
+        entryService.updateEntry(
+                entryId,
+                userId,
+                caption,
+                newMedia,
+                removeAssetIds
+        ).onComplete(ar -> {
+            if (ar.failed()) {
+                failWithMessage(ctx, ar.cause(), "Update entry failed");
+            } else {
+                ctx.response().setStatusCode(204).end();
+            }
+        });
     }
 }
