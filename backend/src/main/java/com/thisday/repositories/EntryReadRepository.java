@@ -2,6 +2,7 @@ package com.thisday.repositories;
 
 import com.thisday.db.Collections;
 import com.thisday.db.MongoProvider;
+import com.thisday.models.Entry;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
@@ -35,7 +36,8 @@ public class EntryReadRepository {
 
                 JsonObject query = new JsonObject()
                         .put("userId", userId)
-                        .put("date", date);
+                        .put("date", date)
+                        .put("status", new JsonObject().put("$ne", Entry.STATUS_PENDING));
 
                 return mongo.find(Collections.ENTRIES, query)
                         .map(JsonArray::new);
@@ -57,6 +59,7 @@ public class EntryReadRepository {
                         .add(new JsonObject().put("$match",
                                 new JsonObject()
                                         .put("userId", userId)
+                                        .put("status", new JsonObject().put("$ne", Entry.STATUS_PENDING))
                                         .put("date", new JsonObject()
                                                 .put("$regex", "^" + yearPrefix + ".*" + daySuffix + "$")
                                                 .put("$lt", cutoffDate)
@@ -107,6 +110,7 @@ public class EntryReadRepository {
                         .add(new JsonObject().put("$match",
                                 new JsonObject()
                                         .put("userId", userId)
+                                        .put("status", new JsonObject().put("$ne", Entry.STATUS_PENDING))
                                         .put("dayMonth", dayMonth)
                                         .put("date", new JsonObject().put("$lt", today))
                         ))
@@ -153,6 +157,7 @@ public class EntryReadRepository {
                         .add(new JsonObject().put("$match",
                                 new JsonObject()
                                         .put("userId", userId)
+                                        .put("status", new JsonObject().put("$ne", Entry.STATUS_PENDING))
                                         .put("date", date)
                         ))
 
@@ -176,6 +181,7 @@ public class EntryReadRepository {
                         .add(new JsonObject().put("$match",
                                 new JsonObject()
                                         .put("userId", userId)
+                                        .put("status", new JsonObject().put("$ne", Entry.STATUS_PENDING))
                                         .put("date", new JsonObject()
                                                 .put("$regex", "^" + monthPrefix))
                         ))

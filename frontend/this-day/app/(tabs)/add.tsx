@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import { Image as ExpoImage } from "expo-image";
 import { Audio, ResizeMode, Video } from "expo-av";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -27,8 +28,11 @@ type MediaItem = ImagePicker.ImagePickerAsset & {
   previewUri?: string | null;
 };
 
+type ExistingPreviewLevel = "thumbnail" | "preview" | "full" | "failed";
+
 const MAX_MEDIA_ITEMS = 5;
 const MAX_VIDEO_DURATION_MS = 10 * 1000;
+const LOCAL_PREVIEW_LOAD_TIMEOUT_MS = 4500;
 
 function normalizeDurationMs(duration?: number | null) {
   if (typeof duration !== "number" || !Number.isFinite(duration) || duration <= 0) {
@@ -161,6 +165,56 @@ function parseAssetIdsParam(raw?: string) {
   }
 }
 
+function isHeicLikeAsset(asset: {
+  mimeType?: string | null;
+  fileName?: string | null;
+  uri?: string | null;
+}) {
+  const mime = (asset.mimeType ?? "").toLowerCase();
+  const fileName = (asset.fileName ?? "").toLowerCase();
+  const uri = (asset.uri ?? "").toLowerCase();
+
+  return (
+    mime.includes("heic") ||
+    mime.includes("heif") ||
+    fileName.endsWith(".heic") ||
+    fileName.endsWith(".heif") ||
+    uri.endsWith(".heic") ||
+    uri.endsWith(".heif")
+  );
+}
+
+function extensionFromPath(input?: string | null) {
+  if (!input) return null;
+  const normalized = input.toLowerCase().split("#")[0]?.split("?")[0] ?? "";
+  const dotIndex = normalized.lastIndexOf(".");
+  if (dotIndex === -1 || dotIndex === normalized.length - 1) return null;
+  return normalized.slice(dotIndex + 1);
+}
+
+function isDefinitelyUnsupportedWebImageAsset(asset: {
+  type?: string | null;
+  mimeType?: string | null;
+  fileName?: string | null;
+  uri?: string | null;
+}) {
+  if (Platform.OS !== "web" || asset.type === "video") return false;
+
+  const mime = (asset.mimeType ?? "").toLowerCase();
+  const ext =
+    extensionFromPath(asset.fileName) ?? extensionFromPath(asset.uri);
+
+  if (mime.includes("tiff") || mime.includes("raw")) {
+    return true;
+  }
+
+  if (!ext) return false;
+
+  return ["tif", "tiff", "dng", "cr2", "cr3", "nef", "arw"].includes(
+    ext,
+  );
+}
+
 export default function AddEntryScreen() {
   const router = useRouter();
   const inputRef = useRef<TextInput>(null);
@@ -205,9 +259,18 @@ export default function AddEntryScreen() {
   const [removedAssetIds, setRemovedAssetIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const [failedLocalPreviewUris, setFailedLocalPreviewUris] = useState<
+    Record<string, true>
+  >({});
+  const [existingPreviewLevels, setExistingPreviewLevels] = useState<
+    Record<string, ExistingPreviewLevel>
+  >({});
+  const localPreviewTimeoutsRef = useRef<
+    Record<string, ReturnType<typeof setTimeout>>
+  >({});
 
   const [showSuccess, setShowSuccess] = useState(false);
-  const [countdown, setCountdown] = useState(3);
 
   const isBackfill = forcedBackfill || entryMode === "past";
   const displayDate = isEditMode
@@ -241,6 +304,10 @@ export default function AddEntryScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      Object.values(localPreviewTimeoutsRef.current).forEach((timeoutId) => {
+        clearTimeout(timeoutId);
+      });
+      localPreviewTimeoutsRef.current = {};
       setCaption(isEditMode ? entryCaption : "");
       setMedia([]);
       setExistingAssetIds(isEditMode ? parsedExistingAssetIds : []);
@@ -249,12 +316,18 @@ export default function AddEntryScreen() {
       setEntryMode("today");
       setPastDateString(date ?? toISTDateString(new Date()));
       setShowSuccess(false);
-      setCountdown(3);
       setTempDate(null);
+      setUploadStatus(null);
+      setFailedLocalPreviewUris({});
+      setExistingPreviewLevels({});
 
       requestAnimationFrame(() => inputRef.current?.focus());
 
       return () => {
+        Object.values(localPreviewTimeoutsRef.current).forEach((timeoutId) => {
+          clearTimeout(timeoutId);
+        });
+        localPreviewTimeoutsRef.current = {};
         inputRef.current?.blur();
         Keyboard.dismiss();
       };
@@ -271,19 +344,12 @@ export default function AddEntryScreen() {
   useEffect(() => {
     if (!showSuccess) return;
 
-    if (countdown === 0) {
+    const t = setTimeout(() => {
       setShowSuccess(false);
-      if (isEditMode && from === "day" && date) {
-        router.replace({ pathname: "day/[date]", params: { date } });
-      } else {
-        router.replace("/today");
-      }
-      return;
-    }
-
-    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
+      router.replace("/today");
+    }, 650);
     return () => clearTimeout(t);
-  }, [showSuccess, countdown, isEditMode, from, date, router]);
+  }, [showSuccess, router]);
 
 
   const handleBack = () => {
@@ -382,6 +448,17 @@ export default function AddEntryScreen() {
             };
           }
 
+          if (
+            Platform.OS === "web" &&
+            asset.type !== "video" &&
+            isDefinitelyUnsupportedWebImageAsset(asset)
+          ) {
+            return {
+              ...asset,
+              loading: false,
+            };
+          }
+
           return {
             ...asset,
             loading: !(Platform.OS === "web" && asset.type === "video"),
@@ -420,19 +497,102 @@ export default function AddEntryScreen() {
   };
 
   const markLoaded = (uri: string) => {
+    const timeoutId = localPreviewTimeoutsRef.current[uri];
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      delete localPreviewTimeoutsRef.current[uri];
+    }
+
     setMedia((p) =>
       p.map((m) => (m.uri === uri ? { ...m, loading: false } : m)),
     );
   };
 
   const removeMedia = (uri: string) => {
+    const timeoutId = localPreviewTimeoutsRef.current[uri];
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      delete localPreviewTimeoutsRef.current[uri];
+    }
+
     setMedia((p) => p.filter((m) => m.uri !== uri));
+    setFailedLocalPreviewUris((prev) => {
+      if (!prev[uri]) return prev;
+      const next = { ...prev };
+      delete next[uri];
+      return next;
+    });
   };
 
   const removeExistingMedia = (assetId: string) => {
     setRemovedAssetIds((prev) =>
       prev.includes(assetId) ? prev : [...prev, assetId],
     );
+    setExistingPreviewLevels((prev) => {
+      if (!prev[assetId]) return prev;
+      const next = { ...prev };
+      delete next[assetId];
+      return next;
+    });
+  };
+
+  const markLocalPreviewFailed = (uri: string) => {
+    const timeoutId = localPreviewTimeoutsRef.current[uri];
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      delete localPreviewTimeoutsRef.current[uri];
+    }
+
+    markLoaded(uri);
+    setFailedLocalPreviewUris((prev) =>
+      prev[uri] ? prev : { ...prev, [uri]: true },
+    );
+  };
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+
+    const pendingPreviewUris = new Set(
+      media
+        .filter(
+          (item) =>
+            item.type !== "video" &&
+            item.loading &&
+            !failedLocalPreviewUris[item.uri] &&
+            !isDefinitelyUnsupportedWebImageAsset(item),
+        )
+        .map((item) => item.uri),
+    );
+
+    Object.keys(localPreviewTimeoutsRef.current).forEach((uri) => {
+      if (pendingPreviewUris.has(uri)) return;
+
+      clearTimeout(localPreviewTimeoutsRef.current[uri]);
+      delete localPreviewTimeoutsRef.current[uri];
+    });
+
+    pendingPreviewUris.forEach((uri) => {
+      if (localPreviewTimeoutsRef.current[uri]) return;
+
+      localPreviewTimeoutsRef.current[uri] = setTimeout(() => {
+        markLocalPreviewFailed(uri);
+      }, LOCAL_PREVIEW_LOAD_TIMEOUT_MS);
+    });
+  }, [failedLocalPreviewUris, media]);
+
+  const advanceExistingPreviewLevel = (assetId: string) => {
+    setExistingPreviewLevels((prev) => {
+      const current = prev[assetId] ?? "thumbnail";
+      const nextLevel: ExistingPreviewLevel =
+        current === "thumbnail"
+          ? "preview"
+          : current === "preview"
+            ? "full"
+            : "failed";
+
+      if (current === nextLevel) return prev;
+      return { ...prev, [assetId]: nextLevel };
+    });
   };
 
   const submit = async () => {
@@ -440,10 +600,18 @@ export default function AddEntryScreen() {
 
     Keyboard.dismiss();
     setValidationMessage(null);
+    const trimmedCaption = caption.trim();
+    const hasAnyMedia = visibleExistingAssetIds.length + media.length > 0;
+
+    if (!trimmedCaption && !hasAnyMedia) {
+      setValidationMessage("Add a caption or at least one media item before saving.");
+      return;
+    }
+
     setSubmitting(true);
+    setUploadStatus(null);
 
     try {
-      const trimmedCaption = caption.trim();
       const files = media.map((m) => ({
         uri: m.uri,
         name: getFileName(m),
@@ -453,14 +621,43 @@ export default function AddEntryScreen() {
       if (isEditMode && entryId) {
         await updateEntry(entryId, trimmedCaption, files, removedAssetIds);
       } else if (isBackfill) {
-        await createBackfilledEntry(displayDate, trimmedCaption, files);
+        setUploadStatus(
+          files.length > 0
+            ? `Uploading media 0/${files.length}`
+            : "Finalizing entry...",
+        );
+        await createBackfilledEntry(
+          displayDate,
+          trimmedCaption,
+          files,
+          (uploaded, total) => {
+            if (total === 0 || uploaded >= total) {
+              setUploadStatus("Finalizing entry...");
+              return;
+            }
+            setUploadStatus(`Uploading media ${uploaded}/${total}`);
+          },
+        );
       } else {
-        await createEntry(trimmedCaption, files);
+        setUploadStatus(
+          files.length > 0
+            ? `Uploading media 0/${files.length}`
+            : "Finalizing entry...",
+        );
+        await createEntry(trimmedCaption, files, (uploaded, total) => {
+          if (total === 0 || uploaded >= total) {
+            setUploadStatus("Finalizing entry...");
+            return;
+          }
+          setUploadStatus(`Uploading media ${uploaded}/${total}`);
+        });
       }
+      setUploadStatus(null);
       setShowSuccess(true);
-      setCountdown(3);
     } catch (error) {
       console.error("Failed to save entry", error);
+      setValidationMessage("Failed to save entry. Please try again.");
+      setUploadStatus(null);
     } finally {
       setSubmitting(false);
     }
@@ -558,6 +755,7 @@ export default function AddEntryScreen() {
         <Pressable
           style={[styles.saveBtn, submitting && { opacity: 0.6 }]}
           onPress={submit}
+          disabled={submitting}
         >
           <Body style={{ color: "white" }}>{isEditMode ? "Update" : "Save"}</Body>
         </Pressable>
@@ -569,6 +767,12 @@ export default function AddEntryScreen() {
         </View>
       )}
 
+      {!!uploadStatus && (
+        <View style={styles.progressBanner}>
+          <Body style={styles.progressText}>{uploadStatus}</Body>
+        </View>
+      )}
+
       {/* MEDIA */}
       {(visibleExistingAssetIds.length > 0 || media.length > 0) && (
         <View style={styles.mediaStripContainer}>
@@ -577,70 +781,105 @@ export default function AddEntryScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.mediaStrip}
           >
-            {visibleExistingAssetIds.map((assetId) => (
-              <View key={`existing-${assetId}`} style={styles.mediaWrapper}>
-                <Image
-                  source={{
-                    uri: apiUrl(`/api/media/immich/${assetId}?type=thumbnail`),
-                  }}
-                  style={styles.media}
-                />
+            {visibleExistingAssetIds.map((assetId) => {
+              const level = existingPreviewLevels[assetId] ?? "thumbnail";
+              const hasFailed = level === "failed";
 
-                <View style={styles.existingBadge}>
-                  <Body style={styles.existingBadgeText}>Saved</Body>
-                </View>
-
-                <Pressable
-                  style={styles.removeBtn}
-                  onPress={() => removeExistingMedia(assetId)}
-                >
-                  <Ionicons name="close" size={16} color="white" />
-                </Pressable>
-              </View>
-            ))}
-
-            {media.map((m) => (
-              <View key={m.uri} style={styles.mediaWrapper}>
-                {m.type === "video" && Platform.OS === "web" && m.previewUri ? (
-                  <View style={styles.videoPreviewWrap}>
-                    <Image source={{ uri: m.previewUri }} style={styles.media} />
-                    <View style={styles.videoPreviewBadge}>
-                      <Ionicons name="play" size={14} color="#fff" />
+              return (
+                <View key={`existing-${assetId}`} style={styles.mediaWrapper}>
+                  {hasFailed ? (
+                    <View style={styles.previewFallback}>
+                      <Ionicons name="image-outline" size={20} color="#C9D4FF" />
+                      <Muted style={styles.previewFallbackText}>Preview unavailable</Muted>
                     </View>
-                  </View>
-                ) : m.type === "video" ? (
-                  <Video
-                    source={{ uri: m.uri }}
-                    style={styles.media}
-                    resizeMode={ResizeMode.COVER}
-                    useNativeControls
-                    onLoad={() => markLoaded(m.uri)}
-                    onReadyForDisplay={() => markLoaded(m.uri)}
-                  />
-                ) : (
-                  <Image
-                    source={{ uri: m.uri }}
-                    style={styles.media}
-                    onLoadEnd={() => markLoaded(m.uri)}
-                  />
-                )}
+                  ) : (
+                    <ExpoImage
+                      source={{
+                        uri: apiUrl(`/api/media/immich/${assetId}?type=${level}`),
+                      }}
+                      style={styles.media}
+                      cachePolicy="memory-disk"
+                      contentFit="cover"
+                      transition={90}
+                      onError={() => advanceExistingPreviewLevel(assetId)}
+                    />
+                  )}
 
-                {m.loading && (
-                  <View style={styles.mediaLoader}>
-                    <ActivityIndicator color="#fff" />
+                  <View style={styles.existingBadge}>
+                    <Body style={styles.existingBadgeText}>Saved</Body>
                   </View>
-                )}
 
-                {!m.loading && (
                   <Pressable
                     style={styles.removeBtn}
-                    onPress={() => removeMedia(m.uri)}
+                    onPress={() => removeExistingMedia(assetId)}
                   >
                     <Ionicons name="close" size={16} color="white" />
                   </Pressable>
-                )}
-              </View>
-            ))}
+                </View>
+              );
+            })}
+
+            {media.map((m) => {
+              const isUnsupportedWebImage =
+                Platform.OS === "web" && isDefinitelyUnsupportedWebImageAsset(m);
+              const hasLocalPreviewFailed = !!failedLocalPreviewUris[m.uri];
+
+              return (
+                <View key={m.uri} style={styles.mediaWrapper}>
+                  {m.type === "video" && Platform.OS === "web" && m.previewUri ? (
+                    <View style={styles.videoPreviewWrap}>
+                      <Image source={{ uri: m.previewUri }} style={styles.media} />
+                      <View style={styles.videoPreviewBadge}>
+                        <Ionicons name="play" size={14} color="#fff" />
+                      </View>
+                    </View>
+                  ) : m.type === "video" ? (
+                    <Video
+                      source={{ uri: m.uri }}
+                      style={styles.media}
+                      resizeMode={ResizeMode.COVER}
+                      useNativeControls
+                      onLoad={() => markLoaded(m.uri)}
+                      onReadyForDisplay={() => markLoaded(m.uri)}
+                    />
+                  ) : isUnsupportedWebImage || hasLocalPreviewFailed ? (
+                    <View style={styles.previewFallback}>
+                      <Ionicons
+                        name={isUnsupportedWebImage ? "document-text-outline" : "image-outline"}
+                        size={20}
+                        color="#C9D4FF"
+                      />
+                      <Muted style={styles.previewFallbackText}>
+                        {isUnsupportedWebImage ? "Format selected" : "Preview unavailable"}
+                      </Muted>
+                    </View>
+                  ) : (
+                    <Image
+                      source={{ uri: m.uri }}
+                      style={styles.media}
+                      resizeMode="cover"
+                      onLoadEnd={() => markLoaded(m.uri)}
+                      onError={() => markLocalPreviewFailed(m.uri)}
+                    />
+                  )}
+
+                  {m.loading && (
+                    <View style={styles.mediaLoader}>
+                      <ActivityIndicator color="#fff" />
+                    </View>
+                  )}
+
+                  {!m.loading && (
+                    <Pressable
+                      style={styles.removeBtn}
+                      onPress={() => removeMedia(m.uri)}
+                    >
+                      <Ionicons name="close" size={16} color="white" />
+                    </Pressable>
+                  )}
+                </View>
+              );
+            })}
           </ScrollView>
         </View>
       )}
@@ -759,7 +998,7 @@ export default function AddEntryScreen() {
                 ? "Your changes will be securely synced to the cloud."
                 : "Your entry will be securely synced to the cloud."}
             </Title>
-            <Muted>Redirecting in {countdown}s…</Muted>
+            <Muted>Opening home…</Muted>
           </View>
         </View>
       </Modal>
@@ -843,6 +1082,21 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     color: "#FFD5D5",
   },
+  progressBanner: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: "rgba(108,140,255,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(108,140,255,0.4)",
+  },
+  progressText: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: "#D8E2FF",
+  },
   mediaStripContainer: {
     height: 120, // ✅ fixed height
     marginVertical: 0,
@@ -865,6 +1119,20 @@ const styles = StyleSheet.create({
   media: {
     width: "100%",
     height: "100%",
+  },
+  previewFallback: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    backgroundColor: "#161A20",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  previewFallbackText: {
+    fontSize: 11,
+    color: "#C9D4FF",
   },
   videoPreviewWrap: {
     width: "100%",

@@ -17,12 +17,12 @@ public class MediaRoutes {
             MediaService mediaService
     ) {
 
-        // GET/HEAD Immich asset (thumbnail or full)
+        // GET/HEAD Immich asset (thumbnail | preview | full)
         router.get("/api/media/immich/:assetId")
                 .handler(ctx -> {
 
                     String assetId = ctx.pathParam("assetId");
-                    String type = ctx.request().getParam("type"); // thumbnail | full
+                    String type = ctx.request().getParam("type"); // thumbnail | preview | full
 
                     if (type == null) {
                         type = "thumbnail";
@@ -44,7 +44,7 @@ public class MediaRoutes {
                 .handler(ctx -> {
 
                     String assetId = ctx.pathParam("assetId");
-                    String type = ctx.request().getParam("type"); // thumbnail | full
+                    String type = ctx.request().getParam("type"); // thumbnail | preview | full
 
                     if (type == null) {
                         type = "thumbnail";

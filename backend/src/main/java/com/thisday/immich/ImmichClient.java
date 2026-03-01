@@ -14,6 +14,9 @@ import io.vertx.ext.web.multipart.MultipartForm;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class ImmichClient {
 
     private static final Logger log = LoggerFactory.getLogger(ImmichClient.class);
@@ -80,31 +83,15 @@ public class ImmichClient {
 
         // ✅ Handle HEAD requests (return headers only, no body)
         boolean isHeadRequest = "HEAD".equalsIgnoreCase(request.method().name());
-
-        String endpoint = "thumbnail".equalsIgnoreCase(type)
-                ? "/api/assets/" + assetId + "/thumbnail"
-                : "/api/assets/" + assetId + "/original";
-        String url = baseUrl + endpoint;
+        String requestedType = type == null ? "thumbnail" : type.toLowerCase();
+        String range = request.getHeader("Range");
 
         log.info("Streaming Immich asset assetId={} type={} method={}", assetId, type, request.method());
 
-        HttpRequest<Buffer> immichReq = client
-                .getAbs(url)
-                .putHeader("x-api-key", apiKey);
-
-        // ✅ Use HEAD method if client sent HEAD
-        if (isHeadRequest) {
-            immichReq = client.headAbs(url).putHeader("x-api-key", apiKey);
-        }
-
-        String range = request.getHeader("Range");
-        if (range != null && !isHeadRequest) {
-            immichReq.putHeader("Range", range);
-        }
-
-        immichReq.send(ar -> {
+        List<String> endpoints = buildEndpointFallbacks(assetId, requestedType);
+        sendWithFallback(endpoints, 0, isHeadRequest, range, ar -> {
             if (ar.failed()) {
-                log.error("Immich request failed for assetId={}", assetId, ar.cause());
+                log.error("Immich request failed for assetId={} type={}", assetId, requestedType, ar.cause());
                 if (!response.ended()) {
                     response.setStatusCode(502).end();
                 }
@@ -142,12 +129,8 @@ public class ImmichClient {
             // ✅ CRITICAL: Force inline
             response.putHeader("Content-Disposition", "inline");
 
-            // Cache headers
-            if ("thumbnail".equalsIgnoreCase(type)) {
-                response.putHeader("Cache-Control", "no-store");
-            } else {
-                response.putHeader("Cache-Control", "public, max-age=31536000, immutable");
-            }
+            // Asset IDs are immutable; aggressive caching improves perceived load speed.
+            response.putHeader("Cache-Control", "public, max-age=31536000, immutable");
 
             // CORS
             response.putHeader("Access-Control-Allow-Origin", "*");
@@ -168,6 +151,77 @@ public class ImmichClient {
             } else {
                 response.end();
             }
+        });
+    }
+
+    private List<String> buildEndpointFallbacks(String assetId, String requestedType) {
+        List<String> endpoints = new ArrayList<>();
+        String thumbnail = "/api/assets/" + assetId + "/thumbnail?size=thumbnail";
+        String preview = "/api/assets/" + assetId + "/thumbnail?size=preview";
+        String original = "/api/assets/" + assetId + "/original";
+
+        if ("thumbnail".equals(requestedType)) {
+            endpoints.add(thumbnail);
+            endpoints.add(preview);
+            endpoints.add(original);
+            return endpoints;
+        }
+
+        if ("preview".equals(requestedType)) {
+            endpoints.add(preview);
+            endpoints.add(thumbnail);
+            endpoints.add(original);
+            return endpoints;
+        }
+
+        // full/original request
+        endpoints.add(original);
+        endpoints.add(preview);
+        endpoints.add(thumbnail);
+        return endpoints;
+    }
+
+    private void sendWithFallback(
+            List<String> endpoints,
+            int index,
+            boolean isHeadRequest,
+            String range,
+            io.vertx.core.Handler<io.vertx.core.AsyncResult<HttpResponse<Buffer>>> handler
+    ) {
+        if (index >= endpoints.size()) {
+            handler.handle(io.vertx.core.Future.failedFuture("All Immich fallback endpoints failed"));
+            return;
+        }
+
+        String endpoint = endpoints.get(index);
+        String url = baseUrl + endpoint;
+
+        HttpRequest<Buffer> req = isHeadRequest
+                ? client.headAbs(url)
+                : client.getAbs(url);
+
+        req.putHeader("x-api-key", apiKey);
+
+        if (!isHeadRequest && range != null && endpoint.endsWith("/original")) {
+            req.putHeader("Range", range);
+        }
+
+        req.send(ar -> {
+            if (ar.failed()) {
+                log.warn("Immich request failed endpoint={} index={}", endpoint, index, ar.cause());
+                sendWithFallback(endpoints, index + 1, isHeadRequest, range, handler);
+                return;
+            }
+
+            HttpResponse<Buffer> resp = ar.result();
+            int status = resp.statusCode();
+            if (status == 200 || status == 206) {
+                handler.handle(io.vertx.core.Future.succeededFuture(resp));
+                return;
+            }
+
+            log.warn("Immich request non-success endpoint={} index={} status={}", endpoint, index, status);
+            sendWithFallback(endpoints, index + 1, isHeadRequest, range, handler);
         });
     }
 

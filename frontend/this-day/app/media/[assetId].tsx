@@ -15,13 +15,16 @@ import { Video, ResizeMode, AVPlaybackStatus } from "expo-av";
 import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import { LinearGradient } from "expo-linear-gradient";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Image as ExpoImage } from "expo-image";
+
 import { getDayEntries } from "@/services/entries";
 import { Colors } from "@/theme/colors";
 import { apiUrl } from "@/services/apiBase";
-import { fetchAndCacheBlobUrl, getCachedBlobUrl } from "@/services/mediaCache";
+import { prefetchImageUrl } from "@/services/mediaPrefetch";
+import { consumeMediaOpenHint } from "@/services/mediaNavigationState";
 
 /* =========================================================
  * Writable directory helper (Expo Go safe)
@@ -34,12 +37,74 @@ function getWritableDir(): string | null {
   return fs.documentDirectory ?? fs.cacheDirectory ?? null;
 }
 
-type MediaKind = "image" | "video";
+type MediaKind = "image" | "video" | "unknown";
 
 type MediaItem = {
   id: string;
+  occurrenceKey: string;
   caption?: string | null;
 };
+
+type MediaDescriptor = {
+  kind: MediaKind;
+  contentType: string | null;
+};
+
+const TYPE_PREFETCH_COUNT = 48;
+const TYPE_PREFETCH_CONCURRENCY = 4;
+const PREFETCH_RADIUS = 2;
+const IMAGE_CANDIDATE_TIMEOUT_MS = 4500;
+
+function flattenDayItems(entries: any[]): MediaItem[] {
+  const result: MediaItem[] = [];
+
+  for (const entry of entries ?? []) {
+    const ids = (entry?.immichAssetIds ?? []).filter(Boolean) as string[];
+    ids.forEach((id, index) => {
+      result.push({
+        id,
+        caption: entry?.caption,
+        occurrenceKey: `${entry?._id ?? "entry"}:${id}:${index}`,
+      });
+    });
+  }
+
+  return result;
+}
+
+async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>,
+) {
+  if (items.length === 0) return;
+
+  let cursor = 0;
+  const workerCount = Math.max(1, Math.min(concurrency, items.length));
+
+  const workers = new Array(workerCount).fill(null).map(async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      await worker(items[index]).catch(() => {
+        // Best-effort only.
+      });
+    }
+  });
+
+  await Promise.all(workers);
+}
+
+function isLikelyIncompatibleOriginal(contentType?: string | null) {
+  if (!contentType) return false;
+
+  const normalized = contentType.toLowerCase();
+  return (
+    normalized.includes("heic") ||
+    normalized.includes("heif") ||
+    normalized.includes("tiff")
+  );
+}
 
 export default function MediaViewerScreen() {
   const router = useRouter();
@@ -51,6 +116,11 @@ export default function MediaViewerScreen() {
 
   if (!assetId) return null;
 
+  const initialHint = useMemo(
+    () => consumeMediaOpenHint({ assetId, date }),
+    [assetId, date],
+  );
+
   const { width, height } = useWindowDimensions();
   const listRef = useRef<FlatList<MediaItem>>(null);
   const viewabilityConfig = useRef({
@@ -60,16 +130,133 @@ export default function MediaViewerScreen() {
     ({ viewableItems }: { viewableItems: Array<{ index?: number | null }> }) => {
       if (viewableItems.length === 0) return;
       setActiveIndex(viewableItems[0].index ?? 0);
-    }
+    },
   ).current;
 
-  const [items, setItems] = useState<MediaItem[]>([]);
+  const [items, setItems] = useState<MediaItem[]>(() => {
+    if (initialHint?.items?.length) {
+      return initialHint.items.map((item) => ({
+        id: item.id,
+        occurrenceKey: item.occurrenceKey,
+        caption: item.caption,
+      }));
+    }
+
+    return [
+      {
+        id: assetId,
+        occurrenceKey: `${assetId}:fallback:0`,
+        caption,
+      },
+    ];
+  });
   const [itemsLoading, setItemsLoading] = useState(true);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(() => {
+    if (!initialHint?.items?.length) return 0;
+    return Math.max(0, Math.min(initialHint.index ?? 0, initialHint.items.length - 1));
+  });
 
   const controlsOpacity = useRef(new Animated.Value(1)).current;
   const [downloading, setDownloading] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [mediaKinds, setMediaKinds] = useState<Record<string, MediaKind>>({});
+  const [mediaContentTypes, setMediaContentTypes] = useState<
+    Record<string, string | null>
+  >({});
+
+  const mediaTypeRequests = useRef(new Map<string, Promise<MediaDescriptor>>());
+  const warmedImageItems = useRef(new Set<string>());
+  const mediaKindsRef = useRef<Record<string, MediaKind>>({});
+  const mediaContentTypesRef = useRef<Record<string, string | null>>({});
+
+  useEffect(() => {
+    mediaKindsRef.current = mediaKinds;
+  }, [mediaKinds]);
+
+  useEffect(() => {
+    mediaContentTypesRef.current = mediaContentTypes;
+  }, [mediaContentTypes]);
+
+  const ensureMediaKind = useCallback(
+    async (mediaId: string): Promise<MediaDescriptor> => {
+      const cached = mediaKindsRef.current[mediaId];
+      const cachedContentType = mediaContentTypesRef.current[mediaId] ?? null;
+      if (cached && cached !== "unknown") {
+        return {
+          kind: cached,
+          contentType: cachedContentType,
+        };
+      }
+
+      const inFlight = mediaTypeRequests.current.get(mediaId);
+      if (inFlight) {
+        return inFlight;
+      }
+
+      const request: Promise<MediaDescriptor> = (async (): Promise<MediaDescriptor> => {
+        try {
+          const response = await fetch(
+            apiUrl(`/api/media/immich/${mediaId}?type=full`),
+            { method: "HEAD" },
+          );
+          const contentType = response.headers.get("content-type") ?? null;
+          const normalizedType = (contentType ?? "").toLowerCase();
+          const nextType: MediaKind = normalizedType.startsWith("video/")
+            ? "video"
+            : "image";
+
+          mediaKindsRef.current = {
+            ...mediaKindsRef.current,
+            [mediaId]: nextType,
+          };
+          mediaContentTypesRef.current = {
+            ...mediaContentTypesRef.current,
+            [mediaId]: contentType,
+          };
+
+          setMediaKinds((prev) =>
+            prev[mediaId] === nextType ? prev : { ...prev, [mediaId]: nextType },
+          );
+          setMediaContentTypes((prev) =>
+            prev[mediaId] === contentType
+              ? prev
+              : { ...prev, [mediaId]: contentType },
+          );
+
+          return {
+            kind: nextType,
+            contentType,
+          };
+        } catch {
+          mediaKindsRef.current = {
+            ...mediaKindsRef.current,
+            [mediaId]: "image",
+          };
+          mediaContentTypesRef.current = {
+            ...mediaContentTypesRef.current,
+            [mediaId]: null,
+          };
+
+          setMediaKinds((prev) =>
+            prev[mediaId] ? prev : { ...prev, [mediaId]: "image" },
+          );
+          setMediaContentTypes((prev) =>
+            prev[mediaId] === null ? prev : { ...prev, [mediaId]: null },
+          );
+          return {
+            kind: "image" as MediaKind,
+            contentType: null,
+          };
+        } finally {
+          mediaTypeRequests.current.delete(mediaId);
+        }
+      })();
+
+      mediaTypeRequests.current.set(mediaId, request);
+      return request;
+    },
+    [],
+  );
 
   /* =========================================================
    * Load day assets (for swipe)
@@ -79,37 +266,41 @@ export default function MediaViewerScreen() {
 
     (async () => {
       setItemsLoading(true);
+
       try {
         if (date) {
           const [y, m, d] = date.split("-").map(Number);
           const res = await getDayEntries(y, m, d);
 
-          const nextItems: MediaItem[] = [];
-          for (const entry of res.data ?? []) {
-            const ids = (entry.immichAssetIds ?? []).filter(Boolean) as string[];
-            for (const id of ids) {
-              nextItems.push({ id, caption: entry.caption });
-            }
-          }
+          const nextItems = flattenDayItems(res?.data ?? []);
 
           if (!cancelled && nextItems.length > 0) {
-            const foundIndex = nextItems.findIndex(
-              (item) => item.id === assetId
-            );
-            const nextIndex = foundIndex >= 0 ? foundIndex : 0;
+            const foundIndex = nextItems.findIndex((item) => item.id === assetId);
             setItems(nextItems);
-            setActiveIndex(nextIndex);
+            setActiveIndex(foundIndex >= 0 ? foundIndex : 0);
             return;
           }
         }
 
         if (!cancelled) {
-          setItems([{ id: assetId, caption }]);
+          setItems([
+            {
+              id: assetId,
+              occurrenceKey: `${assetId}:fallback:0`,
+              caption,
+            },
+          ]);
           setActiveIndex(0);
         }
       } catch {
         if (!cancelled) {
-          setItems([{ id: assetId, caption }]);
+          setItems([
+            {
+              id: assetId,
+              occurrenceKey: `${assetId}:fallback:0`,
+              caption,
+            },
+          ]);
           setActiveIndex(0);
         }
       } finally {
@@ -121,6 +312,61 @@ export default function MediaViewerScreen() {
       cancelled = true;
     };
   }, [assetId, caption, date]);
+
+  useEffect(() => {
+    const ids = Array.from(new Set(items.map((item) => item.id))).slice(
+      0,
+      TYPE_PREFETCH_COUNT,
+    );
+
+    void runWithConcurrency(ids, TYPE_PREFETCH_CONCURRENCY, async (id) => {
+      await ensureMediaKind(id);
+    });
+  }, [ensureMediaKind, items]);
+
+  useEffect(() => {
+    if (items.length === 0) return;
+
+    const start = Math.max(0, activeIndex - PREFETCH_RADIUS);
+    const end = Math.min(items.length - 1, activeIndex + PREFETCH_RADIUS);
+    const windowItems = items.slice(start, end + 1);
+
+    let cancelled = false;
+
+    const warm = async () => {
+      for (const item of windowItems) {
+        if (cancelled) return;
+
+        const thumbnailUrl = apiUrl(`/api/media/immich/${item.id}?type=thumbnail`);
+        const previewUrl = apiUrl(`/api/media/immich/${item.id}?type=preview`);
+        const fullUrl = apiUrl(`/api/media/immich/${item.id}?type=full`);
+
+        await prefetchImageUrl(thumbnailUrl, false).catch(() => {
+          // Best-effort only.
+        });
+
+        const descriptor = await ensureMediaKind(item.id);
+        if (descriptor.kind !== "image") continue;
+
+        if (warmedImageItems.current.has(item.occurrenceKey)) continue;
+        warmedImageItems.current.add(item.occurrenceKey);
+
+        const preferredUrl = isLikelyIncompatibleOriginal(descriptor.contentType)
+          ? previewUrl
+          : fullUrl;
+
+        await prefetchImageUrl(preferredUrl, Platform.OS === "web").catch(() => {
+          // Best-effort only.
+        });
+      }
+    };
+
+    void warm();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeIndex, ensureMediaKind, items]);
 
   /* =========================================================
    * Sync active index to assetId
@@ -187,11 +433,8 @@ export default function MediaViewerScreen() {
 
       let ext = "jpg";
       try {
-        const res = await fetch(mediaUrl, {
-          headers: { Range: "bytes=0-1" },
-        });
-        const type = res.headers.get("content-type") ?? "";
-        if (type.startsWith("video/")) ext = "mp4";
+        const descriptor = await ensureMediaKind(current.id);
+        if (descriptor.kind === "video") ext = "mp4";
       } catch {
         ext = "jpg";
       }
@@ -218,7 +461,7 @@ export default function MediaViewerScreen() {
         horizontal
         pagingEnabled
         key={width}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.occurrenceKey}
         showsHorizontalScrollIndicator={false}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
@@ -230,6 +473,8 @@ export default function MediaViewerScreen() {
         renderItem={({ item, index }) => (
           <MediaSlide
             item={item}
+            mediaType={mediaKinds[item.id] ?? "unknown"}
+            imageContentType={mediaContentTypes[item.id] ?? null}
             width={width}
             height={height}
             isActive={index === activeIndex}
@@ -237,7 +482,7 @@ export default function MediaViewerScreen() {
           />
         )}
         ListEmptyComponent={
-          <View style={[styles.loadingWrap, { width, height }]}>
+          <View style={[styles.loadingWrap, { width, height }]}> 
             <ActivityIndicator size="large" color="white" />
           </View>
         }
@@ -259,7 +504,7 @@ export default function MediaViewerScreen() {
 
       {/* Overlays */}
       <SafeAreaView pointerEvents="box-none" style={styles.overlay}>
-        <Animated.View style={[styles.topBar, { opacity: controlsOpacity }]}>
+        <Animated.View style={[styles.topBar, { opacity: controlsOpacity }]}> 
           <IconButton icon="close" onPress={() => router.back()} />
           <View style={styles.topCenter}>
             {items.length > 0 && (
@@ -322,8 +567,8 @@ export default function MediaViewerScreen() {
         )}
       </SafeAreaView>
 
-      {itemsLoading && (
-        <View style={[styles.loadingOverlay, { width, height }]}>
+      {itemsLoading && items.length === 0 && (
+        <View style={[styles.loadingOverlay, { width, height }]}> 
           <ActivityIndicator size="large" color="white" />
         </View>
       )}
@@ -336,140 +581,74 @@ export default function MediaViewerScreen() {
  * ======================================================= */
 function MediaSlide({
   item,
+  mediaType,
+  imageContentType,
   width,
   height,
   isActive,
   onToggleControls,
 }: {
   item: MediaItem;
+  mediaType: MediaKind;
+  imageContentType: string | null;
   width: number;
   height: number;
   isActive: boolean;
   onToggleControls: () => void;
 }) {
   const mediaUrl = apiUrl(`/api/media/immich/${item.id}?type=full`);
+  const previewUrl = apiUrl(`/api/media/immich/${item.id}?type=preview`);
+  const thumbnailUrl = apiUrl(`/api/media/immich/${item.id}?type=thumbnail`);
   const videoRef = useRef<Video>(null);
   const webVideoRef = useRef<any>(null);
-  const imageOpacity = useRef(new Animated.Value(0)).current;
 
-  const [mediaType, setMediaType] = useState<MediaKind | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [localVideoUri, setLocalVideoUri] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [webAutoplayBlocked, setWebAutoplayBlocked] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
-  const [webImageUrl, setWebImageUrl] = useState<string | null>(null);
+  const [imageCandidateIndex, setImageCandidateIndex] = useState(0);
 
-  /* =========================================================
-   * Detect media type
-   * ======================================================= */
+  const imageCandidates = useMemo(() => {
+    if (mediaType === "video") return [];
+    if (mediaType === "unknown") return [previewUrl, thumbnailUrl];
+
+    if (isLikelyIncompatibleOriginal(imageContentType)) {
+      return [previewUrl, thumbnailUrl];
+    }
+
+    return [mediaUrl, previewUrl, thumbnailUrl];
+  }, [imageContentType, mediaType, mediaUrl, previewUrl, thumbnailUrl]);
+
   useEffect(() => {
-    let cancelled = false;
     setLoading(true);
     setError(false);
-    setLocalVideoUri(null);
-    setWebImageUrl(null);
-    imageOpacity.setValue(0);
+    setIsPlaying(false);
+    setWebAutoplayBlocked(false);
+    setImageCandidateIndex(0);
+  }, [item.occurrenceKey, retryToken]);
 
-    (async () => {
-      try {
-        const res = await fetch(mediaUrl, {
-          headers: { Range: "bytes=0-1" },
-        });
-        const type = res.headers.get("content-type") ?? "";
-        if (!cancelled) {
-          setMediaType(type.startsWith("video/") ? "video" : "image");
-        }
-      } catch {
-        if (!cancelled) setMediaType("image");
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [item.id, retryToken]);
-
-  /* =========================================================
-   * Web cache-aware image load
-   * ======================================================= */
   useEffect(() => {
-    if (Platform.OS !== "web") return;
-    if (mediaType !== "image") return;
+    if (mediaType === "video") return;
+    if (error || !loading) return;
+    if (imageCandidates.length === 0) return;
 
-    let cancelled = false;
-    let objectUrl: string | null = null;
-
-    (async () => {
-      try {
-        objectUrl = await getCachedBlobUrl(mediaUrl);
-        if (!cancelled && objectUrl) {
-          setWebImageUrl(objectUrl);
-          setLoading(false);
-          onImageLoad();
-          return;
-        }
-
-        if (!cancelled) {
-          objectUrl = await fetchAndCacheBlobUrl(mediaUrl);
-          if (objectUrl && !cancelled) {
-            setWebImageUrl(objectUrl);
-            setLoading(false);
-            onImageLoad();
-          }
-        }
-      } catch {
-        // Best-effort only
+    const timeoutId = setTimeout(() => {
+      if (imageCandidateIndex < imageCandidates.length - 1) {
+        setImageCandidateIndex((prev) =>
+          Math.min(prev + 1, imageCandidates.length - 1),
+        );
+        return;
       }
-    })();
+
+      setError(true);
+      setLoading(false);
+    }, IMAGE_CANDIDATE_TIMEOUT_MS);
 
     return () => {
-      cancelled = true;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
+      clearTimeout(timeoutId);
     };
-  }, [mediaType, mediaUrl]);
-
-  /* =========================================================
-   * Optional video preload (only when active)
-   * ======================================================= */
-  useEffect(() => {
-    if (mediaType !== "video") return;
-    if (Platform.OS === "web" || !isActive) {
-      setLoading(false);
-      return;
-    }
-
-    const dir = getWritableDir();
-    if (!dir) {
-      setLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const fileUri = `${dir}${item.id}.mp4`;
-        const info = await FileSystem.getInfoAsync(fileUri);
-        if (!info.exists) {
-          await FileSystem.downloadAsync(mediaUrl, fileUri);
-        }
-        if (!cancelled) {
-          setLocalVideoUri(fileUri);
-          setLoading(false);
-        }
-      } catch {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [mediaType, item.id, isActive, retryToken]);
+  }, [error, imageCandidateIndex, imageCandidates.length, loading, mediaType]);
 
   /* =========================================================
    * Playback state (iOS replay fix included)
@@ -485,7 +664,6 @@ function MediaSlide({
 
     setIsPlaying(status.isPlaying);
 
-    // ✅ iOS fix: rewind after finish so it can play again
     if (status.didJustFinish && !status.isLooping) {
       videoRef.current?.setPositionAsync(0);
     }
@@ -516,7 +694,7 @@ function MediaSlide({
     return () => {
       cancelled = true;
     };
-  }, [isActive, mediaType, localVideoUri]);
+  }, [isActive, mediaType]);
 
   /* =========================================================
    * Web autoplay/pause handling
@@ -544,24 +722,7 @@ function MediaSlide({
     }
   }, [isActive, mediaType, webAutoplayBlocked]);
 
-  /* =========================================================
-   * Image fade-in
-   * ======================================================= */
-  const onImageLoad = () => {
-    Animated.timing(imageOpacity, {
-      toValue: 1,
-      duration: 250,
-      useNativeDriver: true,
-    }).start();
-  };
-
   const retryLoad = () => {
-    setError(false);
-    setLoading(true);
-    setMediaType(null);
-    setLocalVideoUri(null);
-    setIsPlaying(false);
-    setWebAutoplayBlocked(false);
     setRetryToken((t) => t + 1);
   };
 
@@ -584,17 +745,25 @@ function MediaSlide({
 
   return (
     <View style={[styles.slide, { width, height }]}>
-      {mediaType === "image" && (
+      {mediaType !== "video" && (
         <Pressable style={styles.pressableFill} onPress={onToggleControls}>
-          <Animated.Image
-            source={{ uri: webImageUrl ?? mediaUrl }}
-            style={[styles.media, { opacity: imageOpacity }]}
-            resizeMode="contain"
-            onLoadEnd={() => {
-              setLoading(false);
-              onImageLoad();
-            }}
+          <ExpoImage
+            key={`${item.occurrenceKey}:${retryToken}`}
+            source={{ uri: imageCandidates[imageCandidateIndex] ?? thumbnailUrl }}
+            placeholder={{ uri: thumbnailUrl }}
+            style={styles.media}
+            contentFit="contain"
+            cachePolicy="memory-disk"
+            transition={120}
+            onLoad={() => setLoading(false)}
+            onDisplay={() => setLoading(false)}
             onError={() => {
+              if (imageCandidateIndex < imageCandidates.length - 1) {
+                setImageCandidateIndex((prev) => prev + 1);
+                setLoading(true);
+                return;
+              }
+
               setError(true);
               setLoading(false);
             }}
@@ -611,7 +780,7 @@ function MediaSlide({
             autoPlay={isActive}
             muted={false}
             playsInline
-            preload="auto"
+            preload="metadata"
             onLoadedData={() => setLoading(false)}
             onError={() => {
               setError(true);
@@ -624,7 +793,7 @@ function MediaSlide({
           <View style={styles.videoWrap}>
             <Video
               ref={videoRef}
-              source={{ uri: localVideoUri ?? mediaUrl }}
+              source={{ uri: mediaUrl }}
               style={styles.media}
               resizeMode={ResizeMode.CONTAIN}
               shouldPlay={isActive}
@@ -632,6 +801,7 @@ function MediaSlide({
               volume={1.0}
               isLooping
               useNativeControls
+              onLoad={() => setLoading(false)}
               onPlaybackStatusUpdate={onPlaybackStatus}
             />
             <View pointerEvents="box-none" style={styles.videoOverlay}>
@@ -659,7 +829,7 @@ function MediaSlide({
         ))}
 
       {loading && (
-        <View style={styles.loadingWrap}>
+        <View pointerEvents="none" style={styles.slideLoadingOverlay}>
           <ActivityIndicator size="large" color="white" />
         </View>
       )}
@@ -870,6 +1040,16 @@ const styles = StyleSheet.create({
 
   loadingWrap: {
     flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  slideLoadingOverlay: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     alignItems: "center",
     justifyContent: "center",
   },

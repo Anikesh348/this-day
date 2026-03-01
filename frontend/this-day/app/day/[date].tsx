@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Image as ExpoImage } from "expo-image";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -19,6 +20,8 @@ import { deleteEntry, getDayEntries } from "@/services/entries";
 import { Colors } from "@/theme/colors";
 import { apiUrl } from "@/services/apiBase";
 import { ensureMediaCached } from "@/services/mediaCache";
+import { prefetchImageUrl } from "@/services/mediaPrefetch";
+import { setMediaOpenHint } from "@/services/mediaNavigationState";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 const GRID_GAP = 8;
@@ -33,6 +36,49 @@ interface Entry {
   createdAt: string;
 }
 
+type FlatMediaItem = {
+  id: string;
+  occurrenceKey: string;
+  caption?: string | null;
+};
+
+const MAX_FULL_PREFETCH = 24;
+const PREFETCH_CONCURRENCY = 3;
+
+async function runWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<void>,
+) {
+  if (items.length === 0) return;
+
+  let cursor = 0;
+  const workers = new Array(Math.max(1, Math.min(limit, items.length)))
+    .fill(null)
+    .map(async () => {
+      while (cursor < items.length) {
+        const index = cursor;
+        cursor += 1;
+        await worker(items[index]).catch(() => {
+          // Best-effort only.
+        });
+      }
+    });
+
+  await Promise.all(workers);
+}
+
+function isLikelyIncompatibleOriginal(contentType?: string | null) {
+  if (!contentType) return false;
+
+  const normalized = contentType.toLowerCase();
+  return (
+    normalized.includes("heic") ||
+    normalized.includes("heif") ||
+    normalized.includes("tiff")
+  );
+}
+
 export default function DayViewScreen() {
   const router = useRouter();
   const { date, from } = useLocalSearchParams<{
@@ -45,7 +91,26 @@ export default function DayViewScreen() {
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const prefetchedIds = useRef(new Set<string>());
+  const fullPrefetchedIds = useRef(new Set<string>());
   const [videoIds, setVideoIds] = useState<Record<string, true>>({});
+
+  const flatMediaItems = useMemo<FlatMediaItem[]>(() => {
+    return entries.flatMap((entry) =>
+      (entry.immichAssetIds ?? [])
+        .filter(Boolean)
+        .map((assetId, index) => ({
+          id: assetId as string,
+          occurrenceKey: `${entry._id}:${assetId}:${index}`,
+          caption: entry.caption,
+        })),
+    );
+  }, [entries]);
+
+  const flatMediaIndexByOccurrenceKey = useMemo(() => {
+    const indexMap = new Map<string, number>();
+    flatMediaItems.forEach((item, index) => indexMap.set(item.occurrenceKey, index));
+    return indexMap;
+  }, [flatMediaItems]);
 
   const loadData = async () => {
     if (!date) return;
@@ -79,14 +144,19 @@ export default function DayViewScreen() {
     const uniqueIds = ids.filter((id) => !prefetchedIds.current.has(id));
     if (uniqueIds.length === 0) return;
 
-    const CONCURRENCY = 3;
-    let index = 0;
-
     const prefetchOne = async (assetId: string) => {
       prefetchedIds.current.add(assetId);
       const mediaUrl = apiUrl(`/api/media/immich/${assetId}?type=full`);
+      const previewUrl = apiUrl(`/api/media/immich/${assetId}?type=preview`);
+      const thumbnailUrl = apiUrl(`/api/media/immich/${assetId}?type=thumbnail`);
 
       try {
+        if (Platform.OS === "web") {
+          await prefetchImageUrl(thumbnailUrl, false);
+        } else {
+          await Image.prefetch(thumbnailUrl);
+        }
+
         const res = await fetch(mediaUrl, { method: "HEAD" });
         const type = res.headers.get("content-type") ?? "";
         if (type.startsWith("video/")) {
@@ -94,10 +164,20 @@ export default function DayViewScreen() {
             prev[assetId] ? prev : { ...prev, [assetId]: true },
           );
         } else if (type.startsWith("image/")) {
-          if (Platform.OS === "web") {
-            await ensureMediaCached(mediaUrl);
-          } else {
-            await Image.prefetch(mediaUrl);
+          const shouldWarmFull =
+            !fullPrefetchedIds.current.has(assetId) &&
+            fullPrefetchedIds.current.size < MAX_FULL_PREFETCH;
+
+          if (shouldWarmFull) {
+            fullPrefetchedIds.current.add(assetId);
+            const preferredOriginalUrl = isLikelyIncompatibleOriginal(type)
+              ? previewUrl
+              : mediaUrl;
+            if (Platform.OS === "web") {
+              await ensureMediaCached(preferredOriginalUrl);
+            } else {
+              await Image.prefetch(preferredOriginalUrl);
+            }
           }
         }
       } catch {
@@ -105,15 +185,7 @@ export default function DayViewScreen() {
       }
     };
 
-    const workers = new Array(CONCURRENCY).fill(0).map(async () => {
-      while (index < uniqueIds.length) {
-        const id = uniqueIds[index];
-        index += 1;
-        await prefetchOne(id);
-      }
-    });
-
-    Promise.all(workers).catch(() => {});
+    void runWithConcurrency(uniqueIds, PREFETCH_CONCURRENCY, prefetchOne);
   }, [entries]);
 
   const handleBack = () => {
@@ -237,28 +309,47 @@ export default function DayViewScreen() {
 
                 {entry.immichAssetIds?.filter(Boolean).length > 0 && (
                   <View style={styles.mediaGrid}>
-                    {entry.immichAssetIds.filter(Boolean).map((assetId) => (
-                      <Pressable
-                        key={assetId!}
-                        onPress={() =>
-                          router.push({
-                            pathname: "media/[assetId]",
-                            params: {
-                              assetId,
-                              caption: entry?.caption,
+                    {entry.immichAssetIds.filter(Boolean).map((assetId, index) => {
+                      const occurrenceKey = `${entry._id}:${assetId}:${index}`;
+                      const mediaIndex =
+                        flatMediaIndexByOccurrenceKey.get(occurrenceKey) ?? 0;
+
+                      return (
+                        <Pressable
+                          key={occurrenceKey}
+                          onPress={() => {
+                            setMediaOpenHint({
+                              assetId: assetId as string,
                               date,
-                            },
-                          })
-                        }
-                      >
+                              index: mediaIndex,
+                              items: flatMediaItems.map((item) => ({
+                                id: item.id,
+                                occurrenceKey: item.occurrenceKey,
+                                caption: item.caption,
+                              })),
+                            });
+
+                            router.push({
+                              pathname: "media/[assetId]",
+                              params: {
+                                assetId,
+                                caption: entry?.caption,
+                                date,
+                              },
+                            });
+                          }}
+                        >
                         <View style={styles.thumbWrap}>
-                          <Image
+                          <ExpoImage
                             source={{
                               uri: apiUrl(
                                 `/api/media/immich/${assetId}?type=thumbnail`,
                               ),
                             }}
                             style={styles.thumbnail}
+                            cachePolicy="memory-disk"
+                            contentFit="cover"
+                            transition={90}
                           />
                           {videoIds[assetId as string] && (
                             <View style={styles.videoBadge}>
@@ -266,8 +357,9 @@ export default function DayViewScreen() {
                             </View>
                           )}
                         </View>
-                      </Pressable>
-                    ))}
+                        </Pressable>
+                      );
+                    })}
                   </View>
                 )}
               </View>
