@@ -9,6 +9,9 @@ import java.util.List;
 
 public class Entry {
 
+    public static final String STATUS_PENDING = "PENDING";
+    public static final String STATUS_READY = "READY";
+
     public String id;
     public String userId;
     public String caption;
@@ -17,6 +20,9 @@ public class Entry {
     public String dayMonth;
 
     public List<String> immichAssetIds;
+    public String status;
+    public int expectedMediaCount;
+    public int uploadedMediaCount;
 
     public Instant createdAt;
     public Instant updatedAt;
@@ -35,6 +41,13 @@ public class Entry {
         entry.immichAssetIds = doc
                 .getJsonArray("immichAssetIds", new JsonArray())
                 .getList();
+        entry.status = doc.getString("status", STATUS_READY);
+        entry.expectedMediaCount = doc.getInteger(
+                "expectedMediaCount",
+                entry.immichAssetIds == null ? 0 : entry.immichAssetIds.size());
+        entry.uploadedMediaCount = doc.getInteger(
+                "uploadedMediaCount",
+                entry.immichAssetIds == null ? 0 : entry.immichAssetIds.size());
 
         if (doc.getString("createdAt") != null) {
             entry.createdAt = Instant.parse(doc.getString("createdAt"));
@@ -60,6 +73,9 @@ public class Entry {
         json.put("date", date.toString());
         json.put("dayMonth", dayMonth);
         json.put("immichAssetIds", immichAssetIds);
+        json.put("status", status);
+        json.put("expectedMediaCount", expectedMediaCount);
+        json.put("uploadedMediaCount", uploadedMediaCount);
 
         if (createdAt != null) {
             json.put("createdAt", createdAt.toString());

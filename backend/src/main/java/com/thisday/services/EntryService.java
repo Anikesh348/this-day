@@ -4,6 +4,7 @@ import com.thisday.immich.ImmichClient;
 import com.thisday.models.Entry;
 import com.thisday.repositories.EntryRepository;
 import io.vertx.core.Future;
+import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.multipart.MultipartForm;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +18,7 @@ import java.util.List;
 public class EntryService {
 
     private static final Logger log = LoggerFactory.getLogger(EntryService.class);
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private final ImmichClient immichClient;
     private final EntryRepository entryRepository;
@@ -34,22 +36,20 @@ public class EntryService {
             String caption,
             List<MultipartForm> media) {
         return uploadAssets(media, new ArrayList<>()).compose(assetIds -> {
-
-            ZoneId IST = ZoneId.of("Asia/Kolkata");
             LocalDate todayIst = LocalDate.now(IST);
 
             Entry entry = new Entry();
             entry.userId = userId;
             entry.caption = caption;
             entry.immichAssetIds = assetIds;
-
             entry.date = todayIst;
-
             entry.dayMonth = String.format(
                     "%02d-%02d",
                     todayIst.getMonthValue(),
                     todayIst.getDayOfMonth());
-
+            entry.status = Entry.STATUS_READY;
+            entry.expectedMediaCount = assetIds.size();
+            entry.uploadedMediaCount = assetIds.size();
             entry.createdAt = Instant.now(); // UTC
 
             return entryRepository.insert(entry);
@@ -61,7 +61,6 @@ public class EntryService {
             LocalDate date,
             String caption,
             List<MultipartForm> media) {
-        ZoneId IST = ZoneId.of("Asia/Kolkata");
         LocalDate todayIst = LocalDate.now(IST);
 
         if (date.isAfter(todayIst)) {
@@ -78,9 +77,95 @@ public class EntryService {
                     "%02d-%02d",
                     date.getMonthValue(),
                     date.getDayOfMonth());
+            entry.status = Entry.STATUS_READY;
+            entry.expectedMediaCount = assetIds.size();
+            entry.uploadedMediaCount = assetIds.size();
             entry.createdAt = Instant.now();
 
             return entryRepository.insert(entry);
+        });
+    }
+
+    public Future<String> initEntryUploadSession(
+            String userId,
+            LocalDate date,
+            String caption,
+            int expectedMediaCount
+    ) {
+        LocalDate todayIst = LocalDate.now(IST);
+        if (date.isAfter(todayIst)) {
+            return Future.failedFuture("Cannot create entry for a future date");
+        }
+        if (expectedMediaCount < 0) {
+            return Future.failedFuture("expectedMediaCount must be >= 0");
+        }
+
+        Entry entry = new Entry();
+        entry.userId = userId;
+        entry.caption = caption;
+        entry.date = date;
+        entry.dayMonth = String.format(
+                "%02d-%02d",
+                date.getMonthValue(),
+                date.getDayOfMonth());
+        entry.immichAssetIds = new ArrayList<>();
+        entry.status = Entry.STATUS_PENDING;
+        entry.expectedMediaCount = expectedMediaCount;
+        entry.uploadedMediaCount = 0;
+        entry.createdAt = Instant.now();
+        entry.updatedAt = Instant.now();
+
+        return entryRepository.insertAndReturnId(entry);
+    }
+
+    public Future<JsonObject> uploadPendingEntryMedia(
+            String entryId,
+            String userId,
+            MultipartForm media
+    ) {
+        return entryRepository.findById(entryId, userId).compose(entry -> {
+            if (entry == null) {
+                return Future.failedFuture("Entry not found");
+            }
+            if (!Entry.STATUS_PENDING.equals(entry.status)) {
+                return Future.failedFuture("Entry is not pending");
+            }
+            if (entry.uploadedMediaCount >= entry.expectedMediaCount) {
+                return Future.failedFuture("Upload limit reached for this entry");
+            }
+
+            return immichClient.uploadAsset(media).compose(assetId ->
+                    entryRepository.appendUploadedAsset(entryId, userId, assetId).map(updated ->
+                            new JsonObject()
+                                    .put("assetId", assetId)
+                                    .put("uploadedMediaCount", updated.uploadedMediaCount)
+                                    .put("expectedMediaCount", updated.expectedMediaCount)
+                    ));
+        });
+    }
+
+    public Future<Void> finalizePendingEntry(
+            String entryId,
+            String userId
+    ) {
+        return entryRepository.findById(entryId, userId).compose(entry -> {
+            if (entry == null) {
+                return Future.failedFuture("Entry not found");
+            }
+
+            if (Entry.STATUS_READY.equals(entry.status)) {
+                return Future.succeededFuture();
+            }
+
+            if (!Entry.STATUS_PENDING.equals(entry.status)) {
+                return Future.failedFuture("Entry is not pending");
+            }
+
+            if (entry.uploadedMediaCount != entry.expectedMediaCount) {
+                return Future.failedFuture("Upload incomplete");
+            }
+
+            return entryRepository.markReady(entryId, userId);
         });
     }
 
