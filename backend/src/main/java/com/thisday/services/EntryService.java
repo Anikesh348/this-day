@@ -42,6 +42,7 @@ public class EntryService {
             entry.userId = userId;
             entry.caption = caption;
             entry.immichAssetIds = assetIds;
+            entry.uploadedClientMediaIds = new ArrayList<>();
             entry.date = todayIst;
             entry.dayMonth = String.format(
                     "%02d-%02d",
@@ -72,6 +73,7 @@ public class EntryService {
             entry.userId = userId;
             entry.caption = caption;
             entry.immichAssetIds = assetIds;
+            entry.uploadedClientMediaIds = new ArrayList<>();
             entry.date = date;
             entry.dayMonth = String.format(
                     "%02d-%02d",
@@ -109,6 +111,7 @@ public class EntryService {
                 date.getMonthValue(),
                 date.getDayOfMonth());
         entry.immichAssetIds = new ArrayList<>();
+        entry.uploadedClientMediaIds = new ArrayList<>();
         entry.status = Entry.STATUS_PENDING;
         entry.expectedMediaCount = expectedMediaCount;
         entry.uploadedMediaCount = 0;
@@ -121,7 +124,8 @@ public class EntryService {
     public Future<JsonObject> uploadPendingEntryMedia(
             String entryId,
             String userId,
-            MultipartForm media
+            MultipartForm media,
+            String clientMediaId
     ) {
         return entryRepository.findById(entryId, userId).compose(entry -> {
             if (entry == null) {
@@ -130,16 +134,37 @@ public class EntryService {
             if (!Entry.STATUS_PENDING.equals(entry.status)) {
                 return Future.failedFuture("Entry is not pending");
             }
+            String normalizedClientMediaId =
+                    clientMediaId == null ? "" : clientMediaId.trim();
+
+            if (!normalizedClientMediaId.isBlank()) {
+                String existingAssetId =
+                        findExistingAssetForClientMediaId(entry, normalizedClientMediaId);
+                if (existingAssetId != null) {
+                    return Future.succeededFuture(new JsonObject()
+                            .put("assetId", existingAssetId)
+                            .put("uploadedMediaCount", entry.uploadedMediaCount)
+                            .put("expectedMediaCount", entry.expectedMediaCount)
+                            .put("deduplicated", true));
+                }
+            }
+
             if (entry.uploadedMediaCount >= entry.expectedMediaCount) {
                 return Future.failedFuture("Upload limit reached for this entry");
             }
 
             return immichClient.uploadAsset(media).compose(assetId ->
-                    entryRepository.appendUploadedAsset(entryId, userId, assetId).map(updated ->
+                    entryRepository.appendUploadedAsset(
+                                    entryId,
+                                    userId,
+                                    assetId,
+                                    normalizedClientMediaId)
+                            .map(updated ->
                             new JsonObject()
                                     .put("assetId", assetId)
                                     .put("uploadedMediaCount", updated.uploadedMediaCount)
                                     .put("expectedMediaCount", updated.expectedMediaCount)
+                                    .put("deduplicated", false)
                     ));
         });
     }
@@ -216,5 +241,21 @@ public class EntryService {
             assetIds.add(assetId);
             return uploadAssets(forms, assetIds);
         });
+    }
+
+    private String findExistingAssetForClientMediaId(
+            Entry entry,
+            String clientMediaId
+    ) {
+        if (entry.uploadedClientMediaIds == null || entry.immichAssetIds == null) {
+            return null;
+        }
+
+        int index = entry.uploadedClientMediaIds.indexOf(clientMediaId);
+        if (index < 0 || index >= entry.immichAssetIds.size()) {
+            return null;
+        }
+
+        return entry.immichAssetIds.get(index);
     }
 }
