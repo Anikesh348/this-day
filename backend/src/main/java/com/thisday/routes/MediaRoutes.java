@@ -19,6 +19,7 @@ public class MediaRoutes {
 
         // GET/HEAD Immich asset (thumbnail | preview | full)
         router.get("/api/media/immich/:assetId")
+                .handler(authHandler)
                 .handler(ctx -> {
 
                     String assetId = ctx.pathParam("assetId");
@@ -41,6 +42,7 @@ public class MediaRoutes {
                 });
 
         router.head("/api/media/immich/:assetId")
+                .handler(authHandler)
                 .handler(ctx -> {
 
                     String assetId = ctx.pathParam("assetId");

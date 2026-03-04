@@ -161,7 +161,10 @@ export default function DayViewScreen() {
           await Image.prefetch(thumbnailUrl);
         }
 
-        const res = await fetch(mediaUrl, { method: "HEAD" });
+        const res = await fetch(mediaUrl, {
+          method: "HEAD",
+          credentials: "include",
+        });
         const type = res.headers.get("content-type") ?? "";
         if (type.startsWith("video/")) {
           setVideoIds((prev) =>

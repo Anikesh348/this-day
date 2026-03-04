@@ -13,7 +13,10 @@ export async function ensureMediaCached(url: string) {
   const cached = await cache.match(url, { ignoreVary: true });
   if (cached) return;
 
-  const response = await fetch(url, { cache: "reload" });
+  const response = await fetch(url, {
+    cache: "reload",
+    credentials: "include",
+  });
   if (response && response.ok) {
     await cache.put(url, response.clone());
   }
@@ -35,7 +38,10 @@ export async function fetchAndCacheBlobUrl(url: string) {
   if (!isWeb) return null;
   if (!("caches" in window)) return null;
 
-  const response = await fetch(url, { cache: "reload" });
+  const response = await fetch(url, {
+    cache: "reload",
+    credentials: "include",
+  });
   if (!response || !response.ok) return null;
 
   try {

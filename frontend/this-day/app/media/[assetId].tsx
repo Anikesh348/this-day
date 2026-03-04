@@ -200,7 +200,10 @@ export default function MediaViewerScreen() {
         try {
           const response = await fetch(
             apiUrl(`/api/media/immich/${mediaId}?type=full`),
-            { method: "HEAD" },
+            {
+              method: "HEAD",
+              credentials: "include",
+            },
           );
           const contentType = response.headers.get("content-type") ?? null;
           const normalizedType = (contentType ?? "").toLowerCase();

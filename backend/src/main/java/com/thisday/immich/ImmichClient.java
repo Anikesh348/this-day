@@ -132,10 +132,14 @@ public class ImmichClient {
             // Asset IDs are immutable; aggressive caching improves perceived load speed.
             response.putHeader("Cache-Control", "public, max-age=31536000, immutable");
 
-            // CORS
-            response.putHeader("Access-Control-Allow-Origin", "*");
-            response.putHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-            response.putHeader("Access-Control-Allow-Headers", "Range, Content-Type");
+            // CORS for credentialed browser requests:
+            // do not use wildcard origin when cookies are involved.
+            String origin = request.getHeader("Origin");
+            if (origin != null && !origin.isBlank()) {
+                response.putHeader("Access-Control-Allow-Origin", origin);
+                response.putHeader("Vary", "Origin");
+            }
+            response.putHeader("Access-Control-Allow-Credentials", "true");
             response.putHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges");
 
             // ✅ For HEAD requests, only send headers (no body)

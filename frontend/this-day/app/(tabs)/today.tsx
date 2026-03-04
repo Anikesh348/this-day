@@ -139,7 +139,10 @@ export default function TodayScreen() {
       try {
         const res = await fetch(
           apiUrl(`/api/media/immich/${assetId}?type=full`),
-          { method: "HEAD" },
+          {
+            method: "HEAD",
+            credentials: "include",
+          },
         );
         const type = res.headers.get("content-type") ?? "";
         if (type.startsWith("video/")) {

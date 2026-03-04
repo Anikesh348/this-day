@@ -181,6 +181,7 @@ export async function prefetchImageUrl(url: string, persistWebCache = false) {
       await fetch(url, {
         method: "GET",
         cache: "force-cache",
+        credentials: "include",
       });
     } catch {
       // Best-effort only.
