@@ -4,11 +4,14 @@ import { clearToken } from "@/services/auth";
 import { Colors } from "@/theme/colors";
 import { useAuth, useUser } from "@clerk/clerk-expo";
 import { useRouter } from "expo-router";
-import Constants from "expo-constants";
 import { Ionicons } from "@expo/vector-icons";
 import { Image, Pressable, StyleSheet, View, Platform } from "react-native";
 import { useState } from "react";
 import { CACHE_PREFIX } from "@/services/mediaCache";
+
+const APP_VERSION = (
+  require("../../package.json") as { version?: string }
+).version ?? "1.0.0";
 
 export default function ProfileScreen() {
   const { user } = useUser();
@@ -16,10 +19,6 @@ export default function ProfileScreen() {
   const router = useRouter();
   const [cacheClearing, setCacheClearing] = useState(false);
   const [cacheMessage, setCacheMessage] = useState<string | null>(null);
-  const appVersion =
-    Constants.expoConfig?.version ??
-    (Constants as any)?.manifest2?.extra?.expoClient?.version ??
-    "1.0.0";
 
   const logout = async () => {
     await signOut();
@@ -112,7 +111,7 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.versionBlock}>
-          <Muted style={styles.versionText}>App Version {appVersion}</Muted>
+          <Muted style={styles.versionText}>App Version {APP_VERSION}</Muted>
         </View>
       </View>
     </Screen>
