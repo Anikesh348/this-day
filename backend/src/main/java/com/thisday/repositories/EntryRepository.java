@@ -119,7 +119,8 @@ public class EntryRepository {
     public Future<Entry> appendUploadedAsset(
             String entryId,
             String userId,
-            String assetId
+            String assetId,
+            String clientMediaId
     ) {
         Promise<Entry> promise = Promise.promise();
 
@@ -127,8 +128,12 @@ public class EntryRepository {
                 .put("_id", entryId)
                 .put("userId", userId);
 
+        JsonObject pushDoc = new JsonObject()
+                .put("immichAssetIds", assetId)
+                .put("uploadedClientMediaIds", clientMediaId == null ? "" : clientMediaId);
+
         JsonObject updateDoc = new JsonObject()
-                .put("$push", new JsonObject().put("immichAssetIds", assetId))
+                .put("$push", pushDoc)
                 .put("$inc", new JsonObject().put("uploadedMediaCount", 1))
                 .put("$set", new JsonObject().put("updatedAt", Instant.now().toString()));
 

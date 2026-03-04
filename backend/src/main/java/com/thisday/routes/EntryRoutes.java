@@ -86,9 +86,20 @@ public class EntryRoutes {
                 .handler(ctx -> {
                     String entryId = ctx.pathParam("entryId");
                     String userId = ctx.<JsonObject>get("authUser").getString("sub");
+                    String clientMediaId = ctx.request().getFormAttribute("clientMediaId");
 
-                    List<MultipartForm> forms = buildForms(ctx.fileUploads(), userId);
-                    if (forms.isEmpty()) {
+                    if (clientMediaId != null && clientMediaId.length() > 128) {
+                        ctx.response()
+                                .setStatusCode(400)
+                                .putHeader("Content-Type", "application/json")
+                                .end(new JsonObject()
+                                        .put("error", "clientMediaId is too long")
+                                        .encode());
+                        return;
+                    }
+
+                    List<io.vertx.ext.web.FileUpload> uploads = ctx.fileUploads();
+                    if (uploads.isEmpty()) {
                         ctx.response()
                                 .setStatusCode(400)
                                 .putHeader("Content-Type", "application/json")
@@ -97,7 +108,7 @@ public class EntryRoutes {
                                         .encode());
                         return;
                     }
-                    if (forms.size() > 1) {
+                    if (uploads.size() > 1) {
                         ctx.response()
                                 .setStatusCode(400)
                                 .putHeader("Content-Type", "application/json")
@@ -107,7 +118,9 @@ public class EntryRoutes {
                         return;
                     }
 
-                    entryService.uploadPendingEntryMedia(entryId, userId, forms.get(0))
+                    MultipartForm form = buildForm(uploads.get(0), userId, clientMediaId);
+
+                    entryService.uploadPendingEntryMedia(entryId, userId, form, clientMediaId)
                             .onComplete(ar -> {
                                 if (ar.failed()) {
                                     failWithMessage(ctx, ar.cause(), "Upload media to pending entry failed");
@@ -271,21 +284,32 @@ public class EntryRoutes {
         List<MultipartForm> forms = new ArrayList<>();
 
         uploads.forEach(upload -> {
-            MultipartForm form = MultipartForm.create()
-                    .binaryFileUpload(
-                            "assetData",
-                            upload.fileName(),
-                            upload.uploadedFileName(),
-                            upload.contentType())
-                    .attribute("deviceId", "thisday-backend-" + userId)
-                    .attribute("deviceAssetId", UUID.randomUUID().toString())
-                    .attribute("fileCreatedAt", Instant.now().toString())
-                    .attribute("fileModifiedAt", Instant.now().toString());
-
-            forms.add(form);
+            forms.add(buildForm(upload, userId, null));
         });
 
         return forms;
+    }
+
+    private static MultipartForm buildForm(
+            io.vertx.ext.web.FileUpload upload,
+            String userId,
+            String clientMediaId
+    ) {
+        String deviceAssetId =
+                clientMediaId == null || clientMediaId.isBlank()
+                        ? UUID.randomUUID().toString()
+                        : clientMediaId;
+
+        return MultipartForm.create()
+                .binaryFileUpload(
+                        "assetData",
+                        upload.fileName(),
+                        upload.uploadedFileName(),
+                        upload.contentType())
+                .attribute("deviceId", "thisday-backend-" + userId)
+                .attribute("deviceAssetId", deviceAssetId)
+                .attribute("fileCreatedAt", Instant.now().toString())
+                .attribute("fileModifiedAt", Instant.now().toString());
     }
 
     private static void handleUpdateEntry(

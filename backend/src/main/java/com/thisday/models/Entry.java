@@ -5,6 +5,7 @@ import io.vertx.core.json.JsonObject;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 public class Entry {
@@ -20,6 +21,7 @@ public class Entry {
     public String dayMonth;
 
     public List<String> immichAssetIds;
+    public List<String> uploadedClientMediaIds;
     public String status;
     public int expectedMediaCount;
     public int uploadedMediaCount;
@@ -38,9 +40,8 @@ public class Entry {
         entry.date = LocalDate.parse(doc.getString("date"));
         entry.dayMonth = doc.getString("dayMonth");
 
-        entry.immichAssetIds = doc
-                .getJsonArray("immichAssetIds", new JsonArray())
-                .getList();
+        entry.immichAssetIds = readStringList(doc, "immichAssetIds");
+        entry.uploadedClientMediaIds = readStringList(doc, "uploadedClientMediaIds");
         entry.status = doc.getString("status", STATUS_READY);
         entry.expectedMediaCount = doc.getInteger(
                 "expectedMediaCount",
@@ -73,6 +74,7 @@ public class Entry {
         json.put("date", date.toString());
         json.put("dayMonth", dayMonth);
         json.put("immichAssetIds", immichAssetIds);
+        json.put("uploadedClientMediaIds", uploadedClientMediaIds);
         json.put("status", status);
         json.put("expectedMediaCount", expectedMediaCount);
         json.put("uploadedMediaCount", uploadedMediaCount);
@@ -86,5 +88,16 @@ public class Entry {
         }
 
         return json;
+    }
+
+    private static List<String> readStringList(JsonObject doc, String fieldName) {
+        JsonArray array = doc.getJsonArray(fieldName, new JsonArray());
+        List<String> values = new ArrayList<>();
+        for (Object value : array) {
+            if (value instanceof String str) {
+                values.add(str);
+            }
+        }
+        return values;
     }
 }
