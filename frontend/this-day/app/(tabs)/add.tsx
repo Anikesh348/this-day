@@ -29,6 +29,8 @@ import {
   updateEntry,
 } from "@/services/entries";
 import { apiUrl } from "@/services/apiBase";
+import { ThemeName } from "@/theme/colors";
+import { useTheme } from "@/theme/ThemeProvider";
 
 type MediaItem = ImagePicker.ImagePickerAsset & {
   clientMediaId: string;
@@ -40,6 +42,188 @@ type MediaItem = ImagePicker.ImagePickerAsset & {
 };
 
 type ExistingPreviewLevel = "thumbnail" | "preview" | "full" | "failed";
+
+type ThemePalette = {
+  headerIcon: string;
+  accentIcon: string;
+  toggleBackground: string;
+  toggleActiveBackground: string;
+  datePillBackground: string;
+  datePillBorder: string;
+  dateText: string;
+  iconButtonBackground: string;
+  saveButtonBackground: string;
+  saveButtonText: string;
+  validationBackground: string;
+  validationBorder: string;
+  validationText: string;
+  progressBackground: string;
+  progressBorder: string;
+  progressText: string;
+  mediaWrapperBackground: string;
+  previewFallbackBackground: string;
+  previewFallbackBorder: string;
+  previewFallbackIcon: string;
+  previewFallbackText: string;
+  editorText: string;
+  editorBorder: string;
+  editorBackground: string;
+  editorFocusedBorder: string;
+  editorFocusedBackground: string;
+  placeholder: string;
+  pickerCardBackground: string;
+  chipBackground: string;
+  chipBorder: string;
+  chipText: string;
+  dateInputBackground: string;
+  dateInputBorder: string;
+  dateInputText: string;
+  pickerCancel: string;
+  pickerConfirm: string;
+  successCardBackground: string;
+  successIcon: string;
+};
+
+function buildThemePalette(
+  colors: {
+    surface: string;
+    surfaceAlt: string;
+    border: string;
+    textPrimary: string;
+    textSecondary: string;
+    textMuted: string;
+    accent: string;
+    accentGlow: string;
+  },
+  themeName: ThemeName,
+): ThemePalette {
+  if (themeName === "cute") {
+    return {
+      headerIcon: colors.textPrimary,
+      accentIcon: colors.accent,
+      toggleBackground: "#FBEAF5",
+      toggleActiveBackground: "#FFD8EC",
+      datePillBackground: "#FFF8FD",
+      datePillBorder: "#EDB9DB",
+      dateText: "#8A4D70",
+      iconButtonBackground: "#FFF8FD",
+      saveButtonBackground: colors.accent,
+      saveButtonText: "#FFFFFF",
+      validationBackground: "rgba(255,90,122,0.14)",
+      validationBorder: "rgba(255,90,122,0.36)",
+      validationText: "#8C2F4E",
+      progressBackground: "rgba(255,111,179,0.12)",
+      progressBorder: "rgba(255,111,179,0.3)",
+      progressText: "#8A4D70",
+      mediaWrapperBackground: "#FFEAF6",
+      previewFallbackBackground: "#FFF4FB",
+      previewFallbackBorder: "#EDB9DB",
+      previewFallbackIcon: "#B76A94",
+      previewFallbackText: "#8A4D70",
+      editorText: colors.textPrimary,
+      editorBorder: "#EDB9DB",
+      editorBackground: "#FFF8FD",
+      editorFocusedBorder: colors.accent,
+      editorFocusedBackground: "#FFFFFF",
+      placeholder: "#AD6D93",
+      pickerCardBackground: "#FFF8FD",
+      chipBackground: "#FFEAF6",
+      chipBorder: "#EDB9DB",
+      chipText: "#8A4D70",
+      dateInputBackground: "#FFFFFF",
+      dateInputBorder: "#EDB9DB",
+      dateInputText: colors.textPrimary,
+      pickerCancel: "#8A4D70",
+      pickerConfirm: colors.accent,
+      successCardBackground: "#FFF8FD",
+      successIcon: colors.accent,
+    };
+  }
+
+  if (themeName === "onyx") {
+    return {
+      headerIcon: colors.textPrimary,
+      accentIcon: colors.accent,
+      toggleBackground: colors.surface,
+      toggleActiveBackground: colors.surfaceAlt,
+      datePillBackground: colors.surface,
+      datePillBorder: colors.border,
+      dateText: colors.textSecondary,
+      iconButtonBackground: colors.surface,
+      saveButtonBackground: colors.accent,
+      saveButtonText: "#1B1406",
+      validationBackground: "rgba(255,95,119,0.14)",
+      validationBorder: "rgba(255,95,119,0.35)",
+      validationText: "#FF9EAE",
+      progressBackground: "rgba(230,193,90,0.16)",
+      progressBorder: "rgba(230,193,90,0.34)",
+      progressText: "#F5E3B8",
+      mediaWrapperBackground: colors.surface,
+      previewFallbackBackground: colors.surfaceAlt,
+      previewFallbackBorder: colors.border,
+      previewFallbackIcon: "#E6C15A",
+      previewFallbackText: colors.textSecondary,
+      editorText: colors.textPrimary,
+      editorBorder: colors.border,
+      editorBackground: colors.surface,
+      editorFocusedBorder: colors.accent,
+      editorFocusedBackground: colors.surfaceAlt,
+      placeholder: colors.textMuted,
+      pickerCardBackground: colors.surface,
+      chipBackground: colors.surfaceAlt,
+      chipBorder: colors.border,
+      chipText: colors.textPrimary,
+      dateInputBackground: colors.surfaceAlt,
+      dateInputBorder: colors.border,
+      dateInputText: colors.textPrimary,
+      pickerCancel: colors.textMuted,
+      pickerConfirm: colors.accent,
+      successCardBackground: colors.surface,
+      successIcon: colors.accent,
+    };
+  }
+
+  return {
+    headerIcon: "#FFFFFF",
+    accentIcon: "#8AA4FF",
+    toggleBackground: "#1F2328",
+    toggleActiveBackground: "#2C3440",
+    datePillBackground: "rgba(108,140,255,0.08)",
+    datePillBorder: "rgba(108,140,255,0.25)",
+    dateText: "#C9D4FF",
+    iconButtonBackground: "#1F2328",
+    saveButtonBackground: "#6C8CFF",
+    saveButtonText: "#FFFFFF",
+    validationBackground: "rgba(228,88,88,0.15)",
+    validationBorder: "rgba(228,88,88,0.45)",
+    validationText: "#FFD5D5",
+    progressBackground: "rgba(108,140,255,0.12)",
+    progressBorder: "rgba(108,140,255,0.4)",
+    progressText: "#D8E2FF",
+    mediaWrapperBackground: "#111",
+    previewFallbackBackground: "#161A20",
+    previewFallbackBorder: "rgba(255,255,255,0.12)",
+    previewFallbackIcon: "#C9D4FF",
+    previewFallbackText: "#C9D4FF",
+    editorText: "#FFFFFF",
+    editorBorder: "#2C3440",
+    editorBackground: "#0F1115",
+    editorFocusedBorder: "#6C8CFF",
+    editorFocusedBackground: "#0F1115",
+    placeholder: "#8A8F98",
+    pickerCardBackground: "#1F2328",
+    chipBackground: "rgba(255,255,255,0.06)",
+    chipBorder: "rgba(255,255,255,0.12)",
+    chipText: "#D7DCE5",
+    dateInputBackground: "#13161B",
+    dateInputBorder: "rgba(255,255,255,0.12)",
+    dateInputText: "#FFFFFF",
+    pickerCancel: "#AAAAAA",
+    pickerConfirm: "#6C8CFF",
+    successCardBackground: "#1F2328",
+    successIcon: "#6C8CFF",
+  };
+}
 
 const MAX_MEDIA_ITEMS = 3;
 const MAX_VIDEO_DURATION_MS = 10 * 1000;
@@ -237,6 +421,13 @@ function isDefinitelyUnsupportedWebImageAsset(asset: {
 }
 
 export default function AddEntryScreen() {
+  const { colors, themeName } = useTheme();
+  const palette = useMemo(
+    () => buildThemePalette(colors, themeName),
+    [colors, themeName],
+  );
+  const styles = useMemo(() => createStyles(palette), [palette]);
+
   const router = useRouter();
   const inputRef = useRef<TextInput>(null);
 
@@ -786,7 +977,7 @@ export default function AddEntryScreen() {
       {/* HEADER */}
       <View style={styles.header}>
         <Pressable onPress={handleBack}>
-          <Ionicons name="chevron-back" size={26} color="white" />
+          <Ionicons name="chevron-back" size={26} color={palette.headerIcon} />
         </Pressable>
         <Title>{isEditMode ? "Edit Entry" : "New Entry"}</Title>
         <View style={{ width: 26 }} />
@@ -825,7 +1016,7 @@ export default function AddEntryScreen() {
             (!isBackfill || isEditMode) && { opacity: 0.6 },
           ]}
         >
-          <Ionicons name="calendar-outline" size={16} color="#8AA4FF" />
+          <Ionicons name="calendar-outline" size={16} color={palette.accentIcon} />
           <Muted style={styles.dateText}>
             {new Date(`${displayDate}T00:00:00`).toDateString()}
           </Muted>
@@ -843,7 +1034,7 @@ export default function AddEntryScreen() {
             onPress={addFromGallery}
             disabled={submitting || isPreparingMedia}
           >
-            <Ionicons name="images-outline" size={22} color="#8AA4FF" />
+            <Ionicons name="images-outline" size={22} color={palette.accentIcon} />
           </Pressable>
 
           <Pressable
@@ -854,7 +1045,7 @@ export default function AddEntryScreen() {
             onPress={captureFromCamera}
             disabled={submitting || isPreparingMedia}
           >
-            <Ionicons name="camera-outline" size={22} color="#8AA4FF" />
+            <Ionicons name="camera-outline" size={22} color={palette.accentIcon} />
           </Pressable>
 
           {!isEditMode && (forcedBackfill || entryMode === "past") && (
@@ -865,7 +1056,7 @@ export default function AddEntryScreen() {
                 setShowDatePicker(true);
               }}
             >
-              <Ionicons name="calendar-outline" size={22} color="#8AA4FF" />
+              <Ionicons name="calendar-outline" size={22} color={palette.accentIcon} />
             </Pressable>
           )}
         </View>
@@ -878,7 +1069,9 @@ export default function AddEntryScreen() {
           onPress={submit}
           disabled={submitting || isPreparingMedia}
         >
-          <Body style={{ color: "white" }}>{isEditMode ? "Update" : "Save"}</Body>
+          <Body style={{ color: palette.saveButtonText }}>
+            {isEditMode ? "Update" : "Save"}
+          </Body>
         </Pressable>
       </View>
 
@@ -916,7 +1109,7 @@ export default function AddEntryScreen() {
                 <View key={`existing-${assetId}`} style={styles.mediaWrapper}>
                   {hasFailed ? (
                     <View style={styles.previewFallback}>
-                      <Ionicons name="image-outline" size={20} color="#C9D4FF" />
+                      <Ionicons name="image-outline" size={20} color={palette.previewFallbackIcon} />
                       <Muted style={styles.previewFallbackText}>Preview unavailable</Muted>
                     </View>
                   ) : (
@@ -974,7 +1167,7 @@ export default function AddEntryScreen() {
                       <Ionicons
                         name={isUnsupportedWebImage ? "document-text-outline" : "image-outline"}
                         size={20}
-                        color="#C9D4FF"
+                        color={palette.previewFallbackIcon}
                       />
                       <Muted style={styles.previewFallbackText}>
                         {isUnsupportedWebImage ? "Format selected" : "Preview unavailable"}
@@ -1028,7 +1221,7 @@ export default function AddEntryScreen() {
             onChangeText={setCaption}
             onContentSizeChange={handleEditorContentSizeChange}
             placeholder="What's new?"
-            placeholderTextColor={Platform.OS === "web" ? "#8A8F98" : "#666"}
+            placeholderTextColor={palette.placeholder}
             onFocus={() => {
               setIsEditorFocused(true);
             }}
@@ -1107,14 +1300,14 @@ export default function AddEntryScreen() {
 
             <View style={styles.pickerActions}>
               <Pressable onPress={() => setShowDatePicker(false)}>
-                <Body style={{ color: "#aaa" }}>Cancel</Body>
+                <Body style={{ color: palette.pickerCancel }}>Cancel</Body>
               </Pressable>
               <Pressable
                 onPress={() => {
                   setShowDatePicker(false); // pastDateString already correct
                 }}
               >
-                <Ionicons name="checkmark-circle" size={28} color="#6C8CFF" />
+                <Ionicons name="checkmark-circle" size={28} color={palette.pickerConfirm} />
               </Pressable>
             </View>
           </View>
@@ -1125,7 +1318,7 @@ export default function AddEntryScreen() {
       <Modal visible={showSuccess} transparent animationType="fade">
         <View style={styles.successOverlay}>
           <View style={styles.successCard}>
-            <Ionicons name="checkmark-circle" size={64} color="#6C8CFF" />
+            <Ionicons name="checkmark-circle" size={64} color={palette.successIcon} />
             <Title>
               {isEditMode
                 ? "Your changes will be securely synced to the cloud."
@@ -1140,7 +1333,8 @@ export default function AddEntryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (palette: ThemePalette) =>
+  StyleSheet.create({
   root: {
     flex: 1,
     minHeight: 0,
@@ -1157,12 +1351,12 @@ const styles = StyleSheet.create({
   meta: { paddingHorizontal: 12 },
   toggle: {
     flexDirection: "row",
-    backgroundColor: "#1F2328",
+    backgroundColor: palette.toggleBackground,
     borderRadius: 16,
     padding: 4,
   },
   toggleBtn: { flex: 1, paddingVertical: 6, alignItems: "center" },
-  toggleActive: { backgroundColor: "#2C3440", borderRadius: 12 },
+  toggleActive: { backgroundColor: palette.toggleActiveBackground, borderRadius: 12 },
   dateLabel: { paddingHorizontal: 16, paddingBottom: 10, paddingTop: 10 },
   datePill: {
     flexDirection: "row",
@@ -1172,12 +1366,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 999,
-    backgroundColor: "rgba(108,140,255,0.08)",
+    backgroundColor: palette.datePillBackground,
     borderWidth: 1,
-    borderColor: "rgba(108,140,255,0.25)",
+    borderColor: palette.datePillBorder,
   },
   dateText: {
-    color: "#C9D4FF",
+    color: palette.dateText,
   },
   actions: {
     flexDirection: "row",
@@ -1191,7 +1385,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "#1F2328",
+    backgroundColor: palette.iconButtonBackground,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1202,7 +1396,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 20,
-    backgroundColor: "#6C8CFF",
+    backgroundColor: palette.saveButtonBackground,
   },
   validationBanner: {
     marginHorizontal: 16,
@@ -1210,14 +1404,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: "rgba(228,88,88,0.15)",
+    backgroundColor: palette.validationBackground,
     borderWidth: 1,
-    borderColor: "rgba(228,88,88,0.45)",
+    borderColor: palette.validationBorder,
   },
   validationText: {
     fontSize: 12,
     lineHeight: 17,
-    color: "#FFD5D5",
+    color: palette.validationText,
   },
   progressBanner: {
     marginHorizontal: 16,
@@ -1225,14 +1419,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: "rgba(108,140,255,0.12)",
+    backgroundColor: palette.progressBackground,
     borderWidth: 1,
-    borderColor: "rgba(108,140,255,0.4)",
+    borderColor: palette.progressBorder,
   },
   progressText: {
     fontSize: 12,
     lineHeight: 17,
-    color: "#D8E2FF",
+    color: palette.progressText,
   },
   mediaStripContainer: {
     height: 120, // ✅ fixed height
@@ -1250,7 +1444,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
     borderRadius: 12,
     overflow: "hidden",
-    backgroundColor: "#111",
+    backgroundColor: palette.mediaWrapperBackground,
   },
 
   media: {
@@ -1263,13 +1457,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 4,
-    backgroundColor: "#161A20",
+    backgroundColor: palette.previewFallbackBackground,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: palette.previewFallbackBorder,
   },
   previewFallbackText: {
     fontSize: 11,
-    color: "#C9D4FF",
+    color: palette.previewFallbackText,
   },
   videoPreviewWrap: {
     width: "100%",
@@ -1314,18 +1508,19 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
   },
-  editor: { fontSize: 20, color: "white" },
+  editor: { fontSize: 20, color: palette.editorText },
 
   editorWeb: {
     borderWidth: 1,
-    borderColor: "#2C3440",
+    borderColor: palette.editorBorder,
     borderRadius: 14,
     padding: 12,
+    backgroundColor: palette.editorBackground,
   },
 
   editorWebFocused: {
-    borderColor: "#6C8CFF",
-    backgroundColor: "#0F1115",
+    borderColor: palette.editorFocusedBorder,
+    backgroundColor: palette.editorFocusedBackground,
   },
 
   mediaLoader: {
@@ -1354,7 +1549,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   pickerCard: {
-    backgroundColor: "#1F2328",
+    backgroundColor: palette.pickerCardBackground,
     borderRadius: 22,
     padding: 16,
     width: "90%",
@@ -1376,25 +1571,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: palette.chipBackground,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: palette.chipBorder,
   },
   chipText: {
-    color: "#D7DCE5",
+    color: palette.chipText,
     fontSize: 13,
   },
   webDateInputWrap: {
     borderRadius: 14,
     padding: 10,
-    backgroundColor: "#13161B",
+    backgroundColor: palette.dateInputBackground,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: palette.dateInputBorder,
   },
   webDateInput: {
     width: "100%",
     backgroundColor: "transparent",
-    color: "white",
+    color: palette.dateInputText,
     fontSize: 16,
     padding: 6,
   },
@@ -1411,10 +1606,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   successCard: {
-    backgroundColor: "#1F2328",
+    backgroundColor: palette.successCardBackground,
     borderRadius: 24,
     padding: 24,
     alignItems: "center",
     width: "80%",
   },
-});
+  });

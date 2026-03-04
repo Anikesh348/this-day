@@ -21,10 +21,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Image as ExpoImage } from "expo-image";
 
 import { getDayEntries } from "@/services/entries";
-import { Colors } from "@/theme/colors";
 import { apiUrl } from "@/services/apiBase";
 import { prefetchImageUrl } from "@/services/mediaPrefetch";
 import { consumeMediaOpenHint } from "@/services/mediaNavigationState";
+import { useTheme } from "@/theme/ThemeProvider";
 
 /* =========================================================
  * Writable directory helper (Expo Go safe)
@@ -107,6 +107,9 @@ function isLikelyIncompatibleOriginal(contentType?: string | null) {
 }
 
 export default function MediaViewerScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => buildStyles(colors), [colors]);
+
   const router = useRouter();
   const { assetId, caption, date } = useLocalSearchParams<{
     assetId: string;
@@ -479,6 +482,7 @@ export default function MediaViewerScreen() {
             height={height}
             isActive={index === activeIndex}
             onToggleControls={toggleControls}
+            styles={styles}
           />
         )}
         ListEmptyComponent={
@@ -505,7 +509,7 @@ export default function MediaViewerScreen() {
       {/* Overlays */}
       <SafeAreaView pointerEvents="box-none" style={styles.overlay}>
         <Animated.View style={[styles.topBar, { opacity: controlsOpacity }]}> 
-          <IconButton icon="close" onPress={() => router.back()} />
+          <IconButton icon="close" onPress={() => router.back()} styles={styles} />
           <View style={styles.topCenter}>
             {items.length > 0 && (
               <View style={styles.indexPill}>
@@ -519,6 +523,7 @@ export default function MediaViewerScreen() {
             icon="download-outline"
             onPress={handleDownload}
             loading={downloading}
+            styles={styles}
           />
         </Animated.View>
 
@@ -587,6 +592,7 @@ function MediaSlide({
   height,
   isActive,
   onToggleControls,
+  styles,
 }: {
   item: MediaItem;
   mediaType: MediaKind;
@@ -595,6 +601,7 @@ function MediaSlide({
   height: number;
   isActive: boolean;
   onToggleControls: () => void;
+  styles: ReturnType<typeof buildStyles>;
 }) {
   const mediaUrl = apiUrl(`/api/media/immich/${item.id}?type=full`);
   const previewUrl = apiUrl(`/api/media/immich/${item.id}?type=preview`);
@@ -872,10 +879,12 @@ function IconButton({
   icon,
   onPress,
   loading,
+  styles,
 }: {
   icon: any;
   onPress: () => void;
   loading?: boolean;
+  styles: ReturnType<typeof buildStyles>;
 }) {
   return (
     <Pressable onPress={onPress} style={styles.iconButton}>
@@ -891,234 +900,240 @@ function IconButton({
 /* =========================================================
  * Styles
  * ======================================================= */
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: "#05070C",
-  },
+function buildStyles(colors: {
+  background: string;
+  textPrimary: string;
+  textSecondary: string;
+}) {
+  return StyleSheet.create({
+    root: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
 
-  slide: {
-    justifyContent: "center",
-    backgroundColor: "#05070C",
-  },
+    slide: {
+      justifyContent: "center",
+      backgroundColor: colors.background,
+    },
 
-  pressableFill: {
-    flex: 1,
-  },
+    pressableFill: {
+      flex: 1,
+    },
 
-  media: { width: "100%", height: "100%" },
+    media: { width: "100%", height: "100%" },
 
-  webVideo: {
-    width: "100%",
-    height: "100%",
-    objectFit: "contain",
-    backgroundColor: "black",
-  },
+    webVideo: {
+      width: "100%",
+      height: "100%",
+      objectFit: "contain",
+      backgroundColor: "black",
+    },
 
-  overlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: "space-between",
-  },
+    overlay: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      justifyContent: "space-between",
+    },
 
-  topGradient: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 220,
-  },
+    topGradient: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      height: 220,
+    },
 
-  bottomGradient: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 240,
-  },
+    bottomGradient: {
+      position: "absolute",
+      bottom: 0,
+      left: 0,
+      right: 0,
+      height: 240,
+    },
 
-  topBar: {
-    paddingHorizontal: 16,
-    paddingTop: 6,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
+    topBar: {
+      paddingHorizontal: 16,
+      paddingTop: 6,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
 
-  topCenter: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    topCenter: {
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  indexPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-  },
+    indexPill: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 999,
+      backgroundColor: "rgba(0,0,0,0.45)",
+      borderWidth: 1,
+      borderColor: "rgba(255,255,255,0.12)",
+    },
 
-  indexText: {
-    color: Colors.dark.textSecondary,
-    fontSize: 12,
-    letterSpacing: 0.4,
-  },
+    indexText: {
+      color: colors.textSecondary,
+      fontSize: 12,
+      letterSpacing: 0.4,
+    },
 
-  bottomBar: {
-    paddingHorizontal: 18,
-    paddingBottom: 16,
-    gap: 8,
-  },
+    bottomBar: {
+      paddingHorizontal: 18,
+      paddingBottom: 16,
+      gap: 8,
+    },
 
-  captionCard: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 16,
-    backgroundColor: "rgba(8,10,16,0.7)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-  },
+    captionCard: {
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 16,
+      backgroundColor: "rgba(8,10,16,0.7)",
+      borderWidth: 1,
+      borderColor: "rgba(255,255,255,0.08)",
+    },
 
-  captionText: {
-    color: Colors.dark.textPrimary,
-    fontSize: 15,
-    lineHeight: 22,
-  },
+    captionText: {
+      color: colors.textPrimary,
+      fontSize: 15,
+      lineHeight: 22,
+    },
 
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
+    iconButton: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: "rgba(0,0,0,0.6)",
+      justifyContent: "center",
+      alignItems: "center",
+    },
 
-  errorText: {
-    color: "#aaa",
-    textAlign: "center",
-    marginTop: 20,
-  },
+    errorText: {
+      color: "#aaa",
+      textAlign: "center",
+      marginTop: 20,
+    },
 
-  errorWrap: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-    paddingHorizontal: 24,
-  },
+    errorWrap: {
+      position: "absolute",
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 12,
+      paddingHorizontal: 24,
+    },
 
-  retryButton: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-  },
+    retryButton: {
+      paddingHorizontal: 18,
+      paddingVertical: 10,
+      borderRadius: 999,
+      backgroundColor: "rgba(255,255,255,0.12)",
+      borderWidth: 1,
+      borderColor: "rgba(255,255,255,0.18)",
+    },
 
-  retryText: {
-    color: Colors.dark.textPrimary,
-    fontSize: 14,
-    letterSpacing: 0.2,
-  },
+    retryText: {
+      color: colors.textPrimary,
+      fontSize: 14,
+      letterSpacing: 0.2,
+    },
 
-  webHintText: {
-    color: Colors.dark.textSecondary,
-    fontSize: 13,
-    marginTop: 10,
-    textAlign: "center",
-  },
+    webHintText: {
+      color: colors.textSecondary,
+      fontSize: 13,
+      marginTop: 10,
+      textAlign: "center",
+    },
 
-  loadingWrap: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    loadingWrap: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  slideLoadingOverlay: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    slideLoadingOverlay: {
+      position: "absolute",
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  loadingOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(3,5,10,0.65)",
-  },
+    loadingOverlay: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "rgba(3,5,10,0.65)",
+    },
 
-  videoWrap: {
-    flex: 1,
-  },
+    videoWrap: {
+      flex: 1,
+    },
 
-  videoOverlay: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    videoOverlay: {
+      position: "absolute",
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  videoControlButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    videoControlButton: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      backgroundColor: "rgba(0,0,0,0.55)",
+      borderWidth: 1,
+      borderColor: "rgba(255,255,255,0.18)",
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  navButtons: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    justifyContent: "center",
-    alignItems: "center",
-  },
+    navButtons: {
+      position: "absolute",
+      top: 0,
+      bottom: 0,
+      left: 0,
+      right: 0,
+      justifyContent: "center",
+      alignItems: "center",
+    },
 
-  navButton: {
-    position: "absolute",
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    navButton: {
+      position: "absolute",
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: "rgba(0,0,0,0.55)",
+      borderWidth: 1,
+      borderColor: "rgba(255,255,255,0.12)",
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  navLeft: {
-    left: 10,
-  },
+    navLeft: {
+      left: 10,
+    },
 
-  navRight: {
-    right: 10,
-  },
+    navRight: {
+      right: 10,
+    },
 
-  navDisabled: {
-    opacity: 0.35,
-  },
-});
+    navDisabled: {
+      opacity: 0.35,
+    },
+  });
+}

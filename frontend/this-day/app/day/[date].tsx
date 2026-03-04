@@ -17,11 +17,12 @@ import {
 import { Screen } from "@/components/Screen";
 import { Body, Muted, Title } from "@/components/Text";
 import { deleteEntry, getDayEntries } from "@/services/entries";
-import { Colors } from "@/theme/colors";
 import { apiUrl } from "@/services/apiBase";
 import { ensureMediaCached } from "@/services/mediaCache";
 import { prefetchImageUrl } from "@/services/mediaPrefetch";
 import { setMediaOpenHint } from "@/services/mediaNavigationState";
+import { useTheme } from "@/theme/ThemeProvider";
+import { ThemeName } from "@/theme/colors";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 const GRID_GAP = 8;
@@ -80,6 +81,9 @@ function isLikelyIncompatibleOriginal(contentType?: string | null) {
 }
 
 export default function DayViewScreen() {
+  const { colors, themeName } = useTheme();
+  const styles = useMemo(() => createStyles(colors, themeName), [colors, themeName]);
+
   const router = useRouter();
   const { date, from } = useLocalSearchParams<{
     date: string;
@@ -189,6 +193,11 @@ export default function DayViewScreen() {
   }, [entries]);
 
   const handleBack = () => {
+    if (from === "today") {
+      router.replace("/today");
+      return;
+    }
+
     router.replace({
       pathname: "/today",
       params: { date, from: "day" },
@@ -207,7 +216,7 @@ export default function DayViewScreen() {
             <Ionicons
               name="chevron-back"
               size={26}
-              color={Colors.dark.textPrimary}
+              color={colors.textPrimary}
             />
           </Pressable>
 
@@ -236,7 +245,7 @@ export default function DayViewScreen() {
               loading && { opacity: 0.4 },
             ]}
           >
-            <Ionicons name="refresh" size={30} color={Colors.dark.textMuted} />
+            <Ionicons name="refresh" size={30} color={colors.textMuted} />
           </Pressable>
         </View>
 
@@ -283,7 +292,7 @@ export default function DayViewScreen() {
                       <Ionicons
                         name="create-outline"
                         size={14}
-                        color={Colors.dark.textPrimary}
+                        color={colors.textPrimary}
                       />
                       <Muted style={styles.editBtnText}>Edit</Muted>
                     </Pressable>
@@ -297,7 +306,7 @@ export default function DayViewScreen() {
                       <Ionicons
                         name="trash-outline"
                         size={18}
-                        color={Colors.dark.textPrimary}
+                        color={colors.textPrimary}
                       />
                     </Pressable>
                   </View>
@@ -418,203 +427,236 @@ export default function DayViewScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  scroll: {
-    paddingTop: 36,
-    paddingBottom: 120,
-    paddingHorizontal: 6,
+const createStyles = (
+  colors: {
+    textPrimary: string;
+    surface: string;
+    surfaceAlt: string;
+    border: string;
+    accent: string;
+    accentGlow: string;
   },
+  themeName: ThemeName,
+) => {
+  const isDefault = themeName === "default";
+  const isCute = themeName === "cute";
 
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 28,
-  },
+  const cardBackground = isDefault
+    ? "#1C1F24"
+    : isCute
+      ? "#FFF8FD"
+      : colors.surface;
+  const cardBorder = isDefault ? "rgba(255,255,255,0.06)" : colors.border;
+  const thumbnailBackground = isDefault ? "#111" : colors.surfaceAlt;
+  const editButtonBackground = isDefault ? "rgba(255,255,255,0.06)" : colors.surfaceAlt;
+  const modalBackground = isDefault
+    ? "#1E2126"
+    : isCute
+      ? "#FFF8FD"
+      : colors.surface;
+  const modalBorder = isDefault ? "rgba(255,255,255,0.08)" : colors.border;
+  const cancelButtonBackground = isDefault ? "rgba(255,255,255,0.08)" : colors.surfaceAlt;
+  const fabOuterBackground = isDefault ? "rgba(108,140,255,0.18)" : colors.accentGlow;
+  const fabInnerBackground = isDefault ? "#6C8CFF" : colors.accent;
 
-  headerText: {
-    alignItems: "center",
-  },
+  return StyleSheet.create({
+    scroll: {
+      paddingTop: 36,
+      paddingBottom: 120,
+      paddingHorizontal: 6,
+    },
 
-  backBtn: {
-    position: "absolute",
-    left: 0,
-    top: 2,
-  },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 28,
+    },
 
-  refreshBtn: {
-    position: "absolute",
-    right: 0,
-    padding: 8,
-    borderRadius: 20,
-  },
+    headerText: {
+      alignItems: "center",
+    },
 
-  title: {
-    marginBottom: 2,
-  },
+    backBtn: {
+      position: "absolute",
+      left: 0,
+      top: 2,
+    },
 
-  subtitle: {
-    opacity: 0.75,
-  },
+    refreshBtn: {
+      position: "absolute",
+      right: 0,
+      padding: 8,
+      borderRadius: 20,
+    },
 
-  stack: {
-    width: "100%",
-    maxWidth: 500,
-    alignSelf: "center",
-    gap: 22,
-  },
+    title: {
+      marginBottom: 2,
+    },
 
-  card: {
-    backgroundColor: "#1C1F24",
-    borderRadius: 26,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
-  },
+    subtitle: {
+      opacity: 0.75,
+    },
 
-  emptyCard: {
-    alignItems: "center",
-    paddingVertical: 32,
-  },
+    stack: {
+      width: "100%",
+      maxWidth: 500,
+      alignSelf: "center",
+      gap: 22,
+    },
 
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10,
-  },
+    card: {
+      backgroundColor: cardBackground,
+      borderRadius: 26,
+      padding: 18,
+      borderWidth: 1,
+      borderColor: cardBorder,
+    },
 
-  cardActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
+    emptyCard: {
+      alignItems: "center",
+      paddingVertical: 32,
+    },
 
-  editBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.06)",
-  },
+    cardHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 10,
+    },
 
-  editBtnText: {
-    fontSize: 12,
-    color: Colors.dark.textPrimary,
-  },
+    cardActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+    },
 
-  time: {
-    fontSize: 12,
-    opacity: 0.75,
-  },
+    editBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 999,
+      backgroundColor: editButtonBackground,
+    },
 
-  caption: {
-    fontSize: 16,
-    lineHeight: 23,
-    marginBottom: 12,
-  },
+    editBtnText: {
+      fontSize: 12,
+      color: colors.textPrimary,
+    },
 
-  mediaGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: GRID_GAP,
-  },
+    time: {
+      fontSize: 12,
+      opacity: 0.75,
+    },
 
-  thumbnail: {
-    width: GRID_ITEM_SIZE,
-    height: GRID_ITEM_SIZE,
-    borderRadius: 14,
-    backgroundColor: "#111",
-  },
+    caption: {
+      fontSize: 16,
+      lineHeight: 23,
+      marginBottom: 12,
+    },
 
-  thumbWrap: {
-    width: GRID_ITEM_SIZE,
-    height: GRID_ITEM_SIZE,
-    borderRadius: 14,
-    overflow: "hidden",
-    position: "relative",
-  },
+    mediaGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: GRID_GAP,
+    },
 
-  videoBadge: {
-    position: "absolute",
-    top: 6,
-    right: 6,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.35)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    thumbnail: {
+      width: GRID_ITEM_SIZE,
+      height: GRID_ITEM_SIZE,
+      borderRadius: 14,
+      backgroundColor: thumbnailBackground,
+    },
 
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
+    thumbWrap: {
+      width: GRID_ITEM_SIZE,
+      height: GRID_ITEM_SIZE,
+      borderRadius: 14,
+      overflow: "hidden",
+      position: "relative",
+    },
 
-  modalCard: {
-    width: "86%",
-    backgroundColor: "#1E2126",
-    borderRadius: 22,
-    padding: 22,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-  },
+    videoBadge: {
+      position: "absolute",
+      top: 6,
+      right: 6,
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: "rgba(0,0,0,0.6)",
+      borderWidth: 1,
+      borderColor: "rgba(255,255,255,0.35)",
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  modalTitle: {
-    fontSize: 18,
-    marginBottom: 6,
-  },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.55)",
+      justifyContent: "center",
+      alignItems: "center",
+    },
 
-  modalSubtitle: {
-    opacity: 0.75,
-  },
+    modalCard: {
+      width: "86%",
+      backgroundColor: modalBackground,
+      borderRadius: 22,
+      padding: 22,
+      borderWidth: 1,
+      borderColor: modalBorder,
+    },
 
-  modalActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 12,
-    marginTop: 24,
-  },
+    modalTitle: {
+      fontSize: 18,
+      marginBottom: 6,
+    },
 
-  cancelBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.08)",
-  },
+    modalSubtitle: {
+      opacity: 0.75,
+    },
 
-  deleteBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: "#E45858",
-  },
+    modalActions: {
+      flexDirection: "row",
+      justifyContent: "flex-end",
+      gap: 12,
+      marginTop: 24,
+    },
 
-  fabOuter: {
-    position: "absolute",
-    right: 20,
-    bottom: 64,
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: "rgba(108,140,255,0.18)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    cancelBtn: {
+      paddingHorizontal: 18,
+      paddingVertical: 10,
+      borderRadius: 12,
+      backgroundColor: cancelButtonBackground,
+    },
 
-  fabInner: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#6C8CFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});
+    deleteBtn: {
+      paddingHorizontal: 18,
+      paddingVertical: 10,
+      borderRadius: 12,
+      backgroundColor: "#E45858",
+    },
+
+    fabOuter: {
+      position: "absolute",
+      right: 20,
+      bottom: 64,
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      backgroundColor: fabOuterBackground,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    fabInner: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: fabInnerBackground,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+  });
+};
