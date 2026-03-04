@@ -1,11 +1,13 @@
 # ---------- Build ----------
-FROM node:20-alpine AS build
+FROM node:20-bookworm-slim AS build
 ARG APP_ENV=prod
+ARG EXPORT_MODE=prod
+ARG EXPO_MAX_WORKERS=2
 WORKDIR /app
 
 COPY package.json yarn.lock .yarnrc.yml ./
 RUN --mount=type=cache,target=/usr/local/share/.cache/yarn \
-    yarn install --frozen-lockfile
+    yarn install --frozen-lockfile --prefer-offline
 
 # Copy everything else
 COPY . .
@@ -13,7 +15,11 @@ COPY . .
 # Select env file at build time (dev/prod)
 RUN if [ -f ".env.${APP_ENV}" ]; then cp ".env.${APP_ENV}" .env; fi
 
-RUN npx expo export --platform web
+RUN if [ "${EXPORT_MODE}" = "dev" ]; then \
+      ./node_modules/.bin/expo export --platform web --dev --no-minify --no-bytecode --max-workers "${EXPO_MAX_WORKERS}"; \
+    else \
+      ./node_modules/.bin/expo export --platform web --max-workers "${EXPO_MAX_WORKERS}"; \
+    fi
 
 # ---------- Runtime ----------
 FROM nginx:1.25-alpine
