@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Dimensions,
   Image,
@@ -9,12 +9,13 @@ import {
   Text,
   View,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { CalendarList } from "react-native-calendars";
 
 import { getCalendar } from "@/services/entries";
-import { Colors } from "@/theme/colors";
 import { apiUrl } from "@/services/apiBase";
 import { Title, Muted } from "@/components/Text";
+import { useTheme } from "@/theme/ThemeProvider";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -24,6 +25,12 @@ const MARGIN = 10;
 const GAP = 8;
 const DAY_SIZE =
   (SCREEN_WIDTH - MARGIN * 2 - GAP * (COLUMN_COUNT - 1)) / COLUMN_COUNT;
+
+type CalendarEntry = {
+  date: string;
+  immichAssetId?: string | null;
+  hasCaption?: boolean;
+};
 
 /**
  * 🔧 Helper: get today's date string in IST (YYYY-MM-DD)
@@ -43,9 +50,17 @@ function getPreviousMonth(year: number, month: number) {
 }
 
 export default function CalendarScreen() {
+  const { colors, themeName, gradientEnabled, gradientColors } = useTheme();
+  const styles = useMemo(() => createStyles(colors, themeName), [colors, themeName]);
+  const captionOnlyIconColor = useMemo(() => {
+    if (themeName === "default") return "#8CB3FF";
+    if (themeName === "cute") return "#D56AA3";
+    return "#E6C15A";
+  }, [themeName]);
+
   const router = useRouter();
 
-  const [entries, setEntries] = useState<Record<string, any>>({});
+  const [entries, setEntries] = useState<Record<string, CalendarEntry>>({});
   const loadedMonths = useRef<Set<string>>(new Set());
   const monthLoadTimeout = useRef<NodeJS.Timeout | null>(null);
 
@@ -66,8 +81,8 @@ export default function CalendarScreen() {
       const res = await getCalendar(year, month);
       if (!res?.data?.length) return;
 
-      const map: Record<string, any> = {};
-      for (const d of res.data) {
+      const map: Record<string, CalendarEntry> = {};
+      for (const d of res.data as CalendarEntry[]) {
         map[d.date] = d;
       }
 
@@ -107,6 +122,44 @@ export default function CalendarScreen() {
     loadMonth(prev.year, prev.month);
   }, [todayString, loadMonth]);
 
+  useEffect(() => {
+    // Force a clean reload when theme changes so CalendarList does not keep stale cached styles.
+    loadedMonths.current.clear();
+    setEntries({});
+
+    const [year, month] = todayString.split("-").map(Number);
+    const prev = getPreviousMonth(year, month);
+    void loadMonth(year, month);
+    void loadMonth(prev.year, prev.month);
+  }, [themeName, todayString, loadMonth]);
+
+  const calendarTheme = useMemo(
+    () =>
+      ({
+        backgroundColor: gradientEnabled ? "transparent" : colors.background,
+        calendarBackground: gradientEnabled ? "transparent" : colors.background,
+        monthTextColor: colors.textPrimary,
+        textSectionTitleColor: colors.textMuted,
+        textMonthFontSize: 28,
+        textMonthFontWeight: "800",
+        "stylesheet.calendar.header": {
+          header: {
+            flexDirection: "row",
+            justifyContent: "flex-start",
+            paddingLeft: MARGIN,
+            marginTop: 20,
+            marginBottom: 10,
+          },
+          monthText: {
+            fontSize: 28,
+            fontWeight: "800",
+            color: colors.textPrimary,
+          },
+        },
+      }) as any,
+    [colors, gradientEnabled],
+  );
+
   /**
    * ✅ Frozen day renderer (no layout changes ever)
    */
@@ -114,6 +167,7 @@ export default function CalendarScreen() {
     ({ date, state }: any) => {
       const entry = entries[date.dateString];
       const hasEntry = !!entry?.immichAssetId;
+      const hasCaptionOnly = !hasEntry && !!entry?.hasCaption;
       const assetId = entry?.immichAssetId;
 
       const isToday = date.dateString === todayString;
@@ -161,7 +215,17 @@ export default function CalendarScreen() {
             />
 
             {/* ❌ No-entry cross */}
-            {!hasEntry && !isFuture && !isToday && !isDisabled && (
+            {!hasEntry && hasCaptionOnly && !isFuture && !isDisabled && (
+              <View style={styles.captionOnlyBadge}>
+                <Ionicons
+                  name="create-outline"
+                  size={16}
+                  color={captionOnlyIconColor}
+                />
+              </View>
+            )}
+
+            {!hasEntry && !hasCaptionOnly && !isFuture && !isToday && !isDisabled && (
               <View style={styles.crossContainer}>
                 <View style={styles.crossLine} />
                 <View
@@ -181,7 +245,7 @@ export default function CalendarScreen() {
                 isFuture && { backgroundColor: "transparent" },
               ]}
             >
-              <Text style={[styles.dateText, isFuture && { color: "#444" }]}>
+              <Text style={[styles.dateText, isFuture && styles.futureDateText]}>
                 {date.day}
               </Text>
             </View>
@@ -189,11 +253,19 @@ export default function CalendarScreen() {
         </Pressable>
       );
     },
-    [entries, todayString, router],
+    [captionOnlyIconColor, entries, router, styles, todayString],
   );
 
   return (
     <View style={styles.container}>
+      {gradientEnabled && (
+        <LinearGradient
+          colors={gradientColors}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gradient}
+        />
+      )}
       <View style={styles.headerRow}>
         <View style={styles.headerText}>
           <Title>Calendar</Title>
@@ -206,10 +278,11 @@ export default function CalendarScreen() {
             pressed && { opacity: 0.6 },
           ]}
         >
-          <Ionicons name="refresh" size={26} color={Colors.dark.textMuted} />
+          <Ionicons name="refresh" size={26} color={colors.textMuted} />
         </Pressable>
       </View>
       <CalendarList
+        key={`calendar-${themeName}-${gradientEnabled ? "g" : "n"}`}
         current={currentMonth}
         pastScrollRange={12}
         futureScrollRange={0}
@@ -227,123 +300,151 @@ export default function CalendarScreen() {
             months.forEach((m) => loadMonth(m.year, m.month));
           }, 180); // 🧠 stronger debounce
         }}
-        theme={
-          {
-            backgroundColor: Colors.dark.background,
-            calendarBackground: Colors.dark.background,
-            monthTextColor: "#FFFFFF",
-            textSectionTitleColor: Colors.dark.textMuted,
-            textMonthFontSize: 28,
-            textMonthFontWeight: "800",
-            "stylesheet.calendar.header": {
-              header: {
-                flexDirection: "row",
-                justifyContent: "flex-start",
-                paddingLeft: MARGIN,
-                marginTop: 20,
-                marginBottom: 10,
-              },
-              monthText: {
-                fontSize: 28,
-                fontWeight: "800",
-                color: "white",
-              },
-            },
-          } as any
-        }
+        theme={calendarTheme}
         dayComponent={renderDay}
       />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.dark.background,
-  },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingTop: 18,
-    paddingHorizontal: MARGIN,
-    marginBottom: 8,
-  },
-  headerText: {
-    alignItems: "flex-start",
-  },
-  subtitle: {
-    marginTop: 4,
-    opacity: 0.75,
-  },
-  refreshBtn: {
-    padding: 8,
-    borderRadius: 20,
-  },
-  dayCell: {
-    width: DAY_SIZE + GAP / 2,
-    height: DAY_SIZE + 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  visualContainer: {
-    width: DAY_SIZE,
-    height: DAY_SIZE,
-    borderRadius: 12,
-    overflow: "hidden",
-    backgroundColor: "#161616",
-    position: "relative",
+const createStyles = (colors: {
+  background: string;
+  accent: string;
+  textPrimary: string;
+  surface: string;
+  border: string;
+  textMuted: string;
+}, themeName: "default" | "cute" | "onyx") => {
+  const isDefault = themeName === "default";
+  const isCute = themeName === "cute";
 
-    // 🔒 Border ALWAYS present
-    borderWidth: 2,
-    borderColor: "transparent",
-  },
-  todayOutline: {
-    borderColor: Colors.dark.accent,
-  },
-  dayImage: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  futureDay: {
-    backgroundColor: "transparent",
-    borderColor: "#222",
-  },
-  dateBadge: {
-    position: "absolute",
-    top: 5,
-    left: 5,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    paddingHorizontal: 5,
-    borderRadius: 5,
-    minWidth: 18,
-    alignItems: "center",
-  },
-  todayBadge: {
-    backgroundColor: Colors.dark.accent,
-  },
-  dateText: {
-    color: "white",
-    fontWeight: "700",
-    fontSize: 10,
-  },
-  crossContainer: {
-    position: "absolute",
-    width: 14,
-    height: 14,
-    opacity: 0.15,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  crossLine: {
-    position: "absolute",
-    width: 14,
-    height: 1.5,
-    backgroundColor: "#fff",
-    transform: [{ rotate: "45deg" }],
-  },
-});
+  const tileBackground = isDefault ? "#161616" : isCute ? "#FFF8FD" : "#18130C";
+  const futureBorder = isDefault ? "#222" : isCute ? "#E7BBD6" : "#5A4826";
+  const dateBadgeBackground = isDefault
+    ? "rgba(0,0,0,0.5)"
+    : isCute
+      ? "rgba(94,42,73,0.14)"
+      : "rgba(230,193,90,0.16)";
+  const dateTextColor = isDefault ? "#fff" : colors.textPrimary;
+  const futureDateTextColor = isDefault ? "#444" : isCute ? "#B27798" : "#A58C57";
+  const crossLineColor = isDefault ? "#fff" : isCute ? "#C08AAF" : "#C9A44B";
+  const crossOpacity = isDefault ? 0.15 : 0.26;
+  const captionBadgeBackground = isDefault
+    ? "rgba(79,139,255,0.16)"
+    : isCute
+      ? "rgba(255,111,179,0.16)"
+      : "rgba(230,193,90,0.2)";
+
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+      paddingTop: 24,
+    },
+    gradient: {
+      ...StyleSheet.absoluteFillObject,
+    },
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingTop: 32,
+      paddingHorizontal: MARGIN,
+      marginBottom: 8,
+    },
+    headerText: {
+      alignItems: "flex-start",
+    },
+    subtitle: {
+      marginTop: 4,
+      opacity: 0.75,
+    },
+    refreshBtn: {
+      padding: 8,
+      borderRadius: 20,
+    },
+    dayCell: {
+      width: DAY_SIZE + GAP / 2,
+      height: DAY_SIZE + 10,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    visualContainer: {
+      width: DAY_SIZE,
+      height: DAY_SIZE,
+      borderRadius: 12,
+      overflow: "hidden",
+      backgroundColor: tileBackground,
+      position: "relative",
+      borderWidth: 2,
+      borderColor: "transparent",
+    },
+    todayOutline: {
+      borderColor: colors.accent,
+    },
+    dayImage: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+    },
+    futureDay: {
+      backgroundColor: "transparent",
+      borderColor: futureBorder,
+    },
+    dateBadge: {
+      position: "absolute",
+      top: 5,
+      left: 5,
+      backgroundColor: dateBadgeBackground,
+      paddingHorizontal: 5,
+      borderRadius: 5,
+      minWidth: 18,
+      alignItems: "center",
+    },
+    todayBadge: {
+      backgroundColor: colors.accent,
+    },
+    dateText: {
+      color: dateTextColor,
+      fontWeight: "700",
+      fontSize: 10,
+    },
+    futureDateText: {
+      color: futureDateTextColor,
+      fontWeight: "700",
+      fontSize: 10,
+    },
+    crossContainer: {
+      position: "absolute",
+      width: 14,
+      height: 14,
+      opacity: crossOpacity,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    captionOnlyBadge: {
+      position: "absolute",
+      top: "50%",
+      left: "50%",
+      marginTop: -14,
+      marginLeft: -14,
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: captionBadgeBackground,
+      borderWidth: 1,
+      borderColor: "rgba(255,255,255,0.18)",
+    },
+    crossLine: {
+      position: "absolute",
+      width: 14,
+      height: 1.5,
+      backgroundColor: crossLineColor,
+      transform: [{ rotate: "45deg" }],
+    },
+  });
+};

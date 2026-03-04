@@ -1,11 +1,14 @@
 import { Screen } from "@/components/Screen";
 import { Body, Title } from "@/components/Text";
 import { Stack, useRouter } from "expo-router";
+import { useMemo } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { Colors } from "@/theme/colors";
+import { useTheme } from "@/theme/ThemeProvider";
 
 export default function NotFoundScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   return (
     <>
@@ -22,27 +25,32 @@ export default function NotFoundScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  title: {
-    textAlign: "center",
-    marginBottom: 0,
-  },
-  link: {
-    marginTop: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    backgroundColor: Colors.dark.surface,
-  },
-  linkText: {
-    color: Colors.dark.accent,
-  },
-});
+const createStyles = (colors: {
+  border: string;
+  surface: string;
+  accent: string;
+}) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 20,
+    },
+    title: {
+      textAlign: "center",
+      marginBottom: 0,
+    },
+    link: {
+      marginTop: 16,
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    linkText: {
+      color: colors.accent,
+    },
+  });

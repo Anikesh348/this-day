@@ -195,6 +195,8 @@ public class EntryReadRepository {
                                         .put("_id", "$date")
                                         .put("allAssets",
                                                 new JsonObject().put("$push", "$immichAssetIds"))
+                                        .put("hasCaption",
+                                                new JsonObject().put("$max", hasCaptionExpr()))
                         ))
 
                         .add(new JsonObject().put("$project",
@@ -202,6 +204,7 @@ public class EntryReadRepository {
                                         .put("date", "$_id")
                                         .put("hasEntries", true)
                                         .put("immichAssetId", firstValidAssetExpr())
+                                        .put("hasCaption", "$hasCaption")
                         ));
 
                 return aggregate(pipeline);

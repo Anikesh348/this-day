@@ -1,19 +1,26 @@
-import { Colors } from "@/theme/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { Platform, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
+import { useMemo } from "react";
 import Animated, {
   useAnimatedStyle,
   withSpring,
 } from "react-native-reanimated";
+import { useTheme } from "@/theme/ThemeProvider";
 
 function AnimatedTabIcon({
   focused,
   name,
+  activeColor,
+  inactiveColor,
+  styles,
 }: {
   focused: boolean;
   name: keyof typeof Ionicons.glyphMap;
+  activeColor: string;
+  inactiveColor: string;
+  styles: ReturnType<typeof createStyles>;
 }) {
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
@@ -32,7 +39,7 @@ function AnimatedTabIcon({
       <Ionicons
         name={name}
         size={22}
-        color={focused ? Colors.dark.accent : "#FFFFFF"}
+        color={focused ? activeColor : inactiveColor}
       />
       {focused && <View style={styles.activeDot} />}
     </Animated.View>
@@ -41,6 +48,9 @@ function AnimatedTabIcon({
 
 export default function TabsLayout() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   return (
     <Tabs
       screenOptions={{
@@ -53,10 +63,10 @@ export default function TabsLayout() {
           paddingBottom: Platform.OS === "ios" ? 18 : 10,
           paddingTop: 8,
 
-          backgroundColor: "rgba(24,28,40,0.96)",
+          backgroundColor: colors.surface,
           borderTopWidth: 0,
 
-          shadowColor: "#000",
+          shadowColor: colors.accentGlow,
           shadowOpacity: 0.3,
           shadowRadius: 20,
           elevation: 20,
@@ -73,7 +83,13 @@ export default function TabsLayout() {
         name="calendar"
         options={{
           tabBarIcon: ({ focused }) => (
-            <AnimatedTabIcon focused={focused} name="calendar-outline" />
+            <AnimatedTabIcon
+              focused={focused}
+              name="calendar-outline"
+              activeColor={colors.accent}
+              inactiveColor={colors.textPrimary}
+              styles={styles}
+            />
           ),
         }}
       />
@@ -82,7 +98,13 @@ export default function TabsLayout() {
         name="today"
         options={{
           tabBarIcon: ({ focused }) => (
-            <AnimatedTabIcon focused={focused} name="home-outline" />
+            <AnimatedTabIcon
+              focused={focused}
+              name="home-outline"
+              activeColor={colors.accent}
+              inactiveColor={colors.textPrimary}
+              styles={styles}
+            />
           ),
         }}
         listeners={() => ({
@@ -110,7 +132,7 @@ export default function TabsLayout() {
               <Ionicons
                 name="add"
                 size={24}
-                color={focused ? Colors.dark.accent : "#FFFFFF"}
+                color={focused ? colors.accent : colors.textPrimary}
               />
             </View>
           ),
@@ -121,7 +143,13 @@ export default function TabsLayout() {
         name="profile"
         options={{
           tabBarIcon: ({ focused }) => (
-            <AnimatedTabIcon focused={focused} name="person-outline" />
+            <AnimatedTabIcon
+              focused={focused}
+              name="person-outline"
+              activeColor={colors.accent}
+              inactiveColor={colors.textPrimary}
+              styles={styles}
+            />
           ),
         }}
       />
@@ -129,27 +157,31 @@ export default function TabsLayout() {
   );
 }
 
-const styles = StyleSheet.create({
-  iconWrapper: {
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-  },
+const createStyles = (colors: {
+  accent: string;
+  accentGlow: string;
+}) =>
+  StyleSheet.create({
+    iconWrapper: {
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+    },
 
-  activeDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.dark.accent,
-    marginTop: 2,
-  },
+    activeDot: {
+      width: 4,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: colors.accent,
+      marginTop: 2,
+    },
 
-  addWrapper: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(108,140,255,0.18)",
-  },
-});
+    addWrapper: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.accentGlow,
+    },
+  });

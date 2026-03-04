@@ -3,6 +3,7 @@ import { Slot, usePathname, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useEffect } from "react";
 import { ActivityIndicator, Platform, View } from "react-native";
+import { ThemeProvider } from "@/theme/ThemeProvider";
 
 const CLERK_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
@@ -112,9 +113,11 @@ export default function RootLayout() {
       publishableKey={CLERK_PUBLISHABLE_KEY}
       tokenCache={tokenCache}
     >
-      <AuthGate>
-        <Slot />
-      </AuthGate>
+      <ThemeProvider>
+        <AuthGate>
+          <Slot />
+        </AuthGate>
+      </ThemeProvider>
     </ClerkProvider>
   );
 }

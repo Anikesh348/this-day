@@ -1,15 +1,18 @@
 import { useAuth, useOAuth } from "@clerk/clerk-expo";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 
 import { Screen } from "@/components/Screen";
 import { Body, Muted, Title } from "@/components/Text";
 import { clearToken, saveToken } from "@/services/auth";
 import { loginBackend } from "@/services/authApi";
-import { Colors } from "@/theme/colors";
+import { useTheme } from "@/theme/ThemeProvider";
 
 export default function LoginScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const { isLoaded, isSignedIn, getToken } = useAuth();
   const { startOAuthFlow } = useOAuth({ strategy: "oauth_google" });
   const router = useRouter();
@@ -87,23 +90,28 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 24,
-  },
-  button: {
-    marginTop: 24,
-    paddingVertical: 16,
-    paddingHorizontal: 36,
-    borderRadius: 22,
-    backgroundColor: Colors.dark.surface,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    shadowColor: Colors.dark.accentGlow,
-    shadowOpacity: 0.4,
-    shadowRadius: 30,
-  },
-});
+const createStyles = (colors: {
+  surface: string;
+  border: string;
+  accentGlow: string;
+}) =>
+  StyleSheet.create({
+    center: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      gap: 24,
+    },
+    button: {
+      marginTop: 24,
+      paddingVertical: 16,
+      paddingHorizontal: 36,
+      borderRadius: 22,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: colors.accentGlow,
+      shadowOpacity: 0.4,
+      shadowRadius: 30,
+    },
+  });
