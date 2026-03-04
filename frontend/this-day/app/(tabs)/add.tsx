@@ -62,13 +62,6 @@ function createClientMediaId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function baseNameWithoutExtension(input?: string | null) {
-  if (!input) return "";
-  const dotIndex = input.lastIndexOf(".");
-  if (dotIndex <= 0) return input;
-  return input.slice(0, dotIndex);
-}
-
 function safeUploadFileName(input?: string | null, fallbackExt = "jpg") {
   const raw = (input ?? "").trim();
   if (!raw) {
@@ -208,25 +201,6 @@ function parseAssetIdsParam(raw?: string) {
   }
 }
 
-function isHeicLikeAsset(asset: {
-  mimeType?: string | null;
-  fileName?: string | null;
-  uri?: string | null;
-}) {
-  const mime = (asset.mimeType ?? "").toLowerCase();
-  const fileName = (asset.fileName ?? "").toLowerCase();
-  const uri = (asset.uri ?? "").toLowerCase();
-
-  return (
-    mime.includes("heic") ||
-    mime.includes("heif") ||
-    fileName.endsWith(".heic") ||
-    fileName.endsWith(".heif") ||
-    uri.endsWith(".heic") ||
-    uri.endsWith(".heif")
-  );
-}
-
 function extensionFromPath(input?: string | null) {
   if (!input) return null;
   const normalized = input.toLowerCase().split("#")[0]?.split("?")[0] ?? "";
@@ -256,70 +230,6 @@ function isDefinitelyUnsupportedWebImageAsset(asset: {
   return ["tif", "tiff", "dng", "cr2", "cr3", "nef", "arw"].includes(
     ext,
   );
-}
-
-function shouldTranscodeForWeb(asset: {
-  type?: string | null;
-  mimeType?: string | null;
-  fileName?: string | null;
-  uri?: string | null;
-}) {
-  if (Platform.OS !== "web" || asset.type === "video") return false;
-  return (
-    isHeicLikeAsset(asset) || isDefinitelyUnsupportedWebImageAsset(asset)
-  );
-}
-
-async function transcodeWebImageToJpeg(uri: string): Promise<Blob | null> {
-  if (Platform.OS !== "web") return null;
-
-  return new Promise((resolve) => {
-    const img = document.createElement("img");
-    let settled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
-    const finish = (blob: Blob | null) => {
-      if (settled) return;
-      settled = true;
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-      img.removeAttribute("src");
-      resolve(blob);
-    };
-
-    img.onload = () => {
-      try {
-        const width = img.naturalWidth || img.width;
-        const height = img.naturalHeight || img.height;
-        if (!width || !height) {
-          finish(null);
-          return;
-        }
-
-        const maxSide = 2560;
-        const scale = Math.min(1, maxSide / Math.max(width, height));
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, Math.round(width * scale));
-        canvas.height = Math.max(1, Math.round(height * scale));
-
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          finish(null);
-          return;
-        }
-
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob((blob) => finish(blob), "image/jpeg", 0.88);
-      } catch {
-        finish(null);
-      }
-    };
-
-    img.onerror = () => finish(null);
-    img.src = uri;
-    timeoutId = setTimeout(() => finish(null), 6000);
-  });
 }
 
 export default function AddEntryScreen() {
@@ -557,33 +467,6 @@ export default function AddEntryScreen() {
     if (Platform.OS === "web" && asset.type === "video") {
       previewUri = await generateWebVideoThumbnail(asset.uri);
       loading = false;
-    }
-
-    if (shouldTranscodeForWeb(asset)) {
-      const convertedBlob = await transcodeWebImageToJpeg(asset.uri);
-      if (convertedBlob) {
-        const originalName =
-          asset.file?.name ?? asset.fileName ?? `photo-${Date.now()}`;
-        const convertedName = safeUploadFileName(
-          `${baseNameWithoutExtension(originalName) || "photo"}.jpg`,
-          "jpg",
-        );
-        const convertedFile =
-          typeof File !== "undefined"
-            ? new File([convertedBlob], convertedName, {
-                type: "image/jpeg",
-                lastModified: Date.now(),
-              })
-            : convertedBlob;
-        const objectUrl = URL.createObjectURL(convertedFile);
-        generatedObjectUrlsRef.current[clientMediaId] = objectUrl;
-
-        localUri = objectUrl;
-        uploadName = convertedName;
-        uploadMimeType = "image/jpeg";
-        webFile = convertedFile;
-        loading = false;
-      }
     }
 
     return {
