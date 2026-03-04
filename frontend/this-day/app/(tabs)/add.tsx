@@ -39,7 +39,7 @@ type MediaItem = ImagePicker.ImagePickerAsset & {
 
 type ExistingPreviewLevel = "thumbnail" | "preview" | "full" | "failed";
 
-const MAX_MEDIA_ITEMS = 5;
+const MAX_MEDIA_ITEMS = 3;
 const MAX_VIDEO_DURATION_MS = 10 * 1000;
 const LOCAL_PREVIEW_LOAD_TIMEOUT_MS = 4500;
 
@@ -995,8 +995,13 @@ export default function AddEntryScreen() {
       )}
 
       {/* CAPTION */}
-      <View style={{ flex: 1 }}>
-        <View style={styles.composer}>
+      <View
+        style={[
+          styles.captionSection,
+          Platform.OS === "web" && styles.captionSectionWeb,
+        ]}
+      >
+        <View style={[styles.composer, Platform.OS === "web" && styles.composerWeb]}>
           <TextInput
             ref={inputRef}
             autoFocus
@@ -1012,8 +1017,9 @@ export default function AddEntryScreen() {
             onBlur={() => setIsEditorFocused(false)}
             style={[
               styles.editor,
-              { height: EDITOR_HEIGHT },
+              Platform.OS !== "web" && { height: EDITOR_HEIGHT },
               Platform.OS === "web" && styles.editorWeb,
+              Platform.OS === "web" && styles.editorWebStretch,
               Platform.OS === "web" &&
                 isEditorFocused &&
                 styles.editorWebFocused,
@@ -1120,6 +1126,7 @@ export default function AddEntryScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+    minHeight: 0,
     overflow: "hidden",
   },
   header: {
@@ -1280,11 +1287,27 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
 
+  captionSection: { flex: 1 },
+  captionSectionWeb: {
+    minHeight: 0,
+    overflow: "hidden",
+  },
+  composer: { paddingHorizontal: 16, paddingVertical: 2 },
+  composerWeb: {
+    flex: 1,
+    minHeight: 0,
+  },
+  editor: { fontSize: 20, color: "white" },
+
   editorWeb: {
     borderWidth: 1,
     borderColor: "#2C3440",
     borderRadius: 14,
     padding: 12,
+  },
+  editorWebStretch: {
+    flex: 1,
+    minHeight: 0,
   },
 
   editorWebFocused: {
@@ -1310,9 +1333,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
-  composer: { paddingHorizontal: 16, paddingVertical: 2 },
-  editor: { fontSize: 20, color: "white" },
 
   pickerOverlay: {
     flex: 1,
