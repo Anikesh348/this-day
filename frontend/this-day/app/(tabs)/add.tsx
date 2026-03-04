@@ -10,11 +10,13 @@ import {
   Image,
   Keyboard,
   Modal,
+  NativeSyntheticEvent,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
+  TextInputContentSizeChangeEventData,
   View,
 } from "react-native";
 
@@ -42,6 +44,8 @@ type ExistingPreviewLevel = "thumbnail" | "preview" | "full" | "failed";
 const MAX_MEDIA_ITEMS = 3;
 const MAX_VIDEO_DURATION_MS = 10 * 1000;
 const LOCAL_PREVIEW_LOAD_TIMEOUT_MS = 4500;
+const MIN_EDITOR_HEIGHT = 120;
+const MAX_EDITOR_HEIGHT = 320;
 
 function normalizeDurationMs(duration?: number | null) {
   if (typeof duration !== "number" || !Number.isFinite(duration) || duration <= 0) {
@@ -269,7 +273,7 @@ export default function AddEntryScreen() {
   const [isEditorFocused, setIsEditorFocused] = useState(false);
 
   const [caption, setCaption] = useState("");
-  const EDITOR_HEIGHT = 180;
+  const [editorHeight, setEditorHeight] = useState(MIN_EDITOR_HEIGHT);
 
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [existingAssetIds, setExistingAssetIds] = useState<string[]>([]);
@@ -345,6 +349,7 @@ export default function AddEntryScreen() {
       setUploadStatus(null);
       setFailedLocalPreviewUris({});
       setExistingPreviewLevels({});
+      setEditorHeight(MIN_EDITOR_HEIGHT);
 
       requestAnimationFrame(() => inputRef.current?.focus());
 
@@ -673,6 +678,18 @@ export default function AddEntryScreen() {
       if (current === nextLevel) return prev;
       return { ...prev, [assetId]: nextLevel };
     });
+  };
+
+  const handleEditorContentSizeChange = (
+    event: NativeSyntheticEvent<TextInputContentSizeChangeEventData>,
+  ) => {
+    const measuredHeight = Math.ceil(event.nativeEvent.contentSize.height);
+    const clampedHeight = Math.max(
+      MIN_EDITOR_HEIGHT,
+      Math.min(MAX_EDITOR_HEIGHT, measuredHeight),
+    );
+
+    setEditorHeight((prev) => (prev === clampedHeight ? prev : clampedHeight));
   };
 
   const submit = async () => {
@@ -1006,9 +1023,10 @@ export default function AddEntryScreen() {
             ref={inputRef}
             autoFocus
             multiline
-            scrollEnabled
+            scrollEnabled={editorHeight >= MAX_EDITOR_HEIGHT}
             value={caption}
             onChangeText={setCaption}
+            onContentSizeChange={handleEditorContentSizeChange}
             placeholder="What's new?"
             placeholderTextColor={Platform.OS === "web" ? "#8A8F98" : "#666"}
             onFocus={() => {
@@ -1017,9 +1035,8 @@ export default function AddEntryScreen() {
             onBlur={() => setIsEditorFocused(false)}
             style={[
               styles.editor,
-              Platform.OS !== "web" && { height: EDITOR_HEIGHT },
+              { height: editorHeight },
               Platform.OS === "web" && styles.editorWeb,
-              Platform.OS === "web" && styles.editorWebStretch,
               Platform.OS === "web" &&
                 isEditorFocused &&
                 styles.editorWebFocused,
@@ -1304,10 +1321,6 @@ const styles = StyleSheet.create({
     borderColor: "#2C3440",
     borderRadius: 14,
     padding: 12,
-  },
-  editorWebStretch: {
-    flex: 1,
-    minHeight: 0,
   },
 
   editorWebFocused: {

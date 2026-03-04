@@ -31,21 +31,37 @@ export default function Root({ children }: { children: React.ReactNode }) {
 }
 
 const responsiveBackground = `
-html, body, #root {
+:root {
+  --app-viewport-height: 100dvh;
+}
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
   background-color: #0B0B0B;
-  height: 100%;
   width: 100%;
+  height: var(--app-viewport-height);
+  max-height: var(--app-viewport-height);
+  overflow: hidden;
+}
+@supports not (height: 100dvh) {
+  :root {
+    --app-viewport-height: 100vh;
+  }
 }
 body {
   color-scheme: dark;
-  overflow: hidden;
-  position: fixed;
-  inset: 0;
   overscroll-behavior: none;
   -webkit-overflow-scrolling: auto;
   touch-action: manipulation;
 }
 #root {
+  display: flex;
+}
+#root > div {
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 `;

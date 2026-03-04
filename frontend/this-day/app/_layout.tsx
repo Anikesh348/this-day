@@ -54,6 +54,30 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 export default function RootLayout() {
   useEffect(() => {
     if (Platform.OS !== "web") return;
+
+    const root = document.documentElement;
+    const updateViewportHeight = () => {
+      const nextHeight = window.visualViewport?.height ?? window.innerHeight;
+      root.style.setProperty("--app-viewport-height", `${nextHeight}px`);
+    };
+
+    updateViewportHeight();
+
+    window.addEventListener("resize", updateViewportHeight);
+    window.addEventListener("orientationchange", updateViewportHeight);
+    window.visualViewport?.addEventListener("resize", updateViewportHeight);
+    window.visualViewport?.addEventListener("scroll", updateViewportHeight);
+
+    return () => {
+      window.removeEventListener("resize", updateViewportHeight);
+      window.removeEventListener("orientationchange", updateViewportHeight);
+      window.visualViewport?.removeEventListener("resize", updateViewportHeight);
+      window.visualViewport?.removeEventListener("scroll", updateViewportHeight);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
     if (!("serviceWorker" in navigator)) return;
 
     const register = async () => {
